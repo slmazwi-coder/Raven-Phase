@@ -1,0 +1,57 @@
+# Raven — Phase 2 Brief: Mobile App Foundation + Core Messaging
+
+## Context
+Phase 1 (backend: enrollment, OTP, device registration, admin auth) is done and verified. This phase builds the actual mobile app shell and gets basic messaging working end-to-end, wired to the Phase 1 backend. No privacy/security features yet (no watermarking, no screenshot detection, no FLAG_SECURE) — that's Phase 3. This phase is purely: does the app run on a real phone, and can two people send messages to each other.
+
+## Tech stack
+- **Framework**: Expo (React Native) with EAS Build
+- **Language**: TypeScript
+- **Navigation**: React Navigation
+- **State**: React Context or Zustand (keep it simple at this stage)
+- **Real-time**: connect to the WebSocket server from Phase 1 backend
+
+## Task 1 — Project setup + build pipeline (do this FIRST, before any feature code)
+1. Initialize a new Expo project (TypeScript template).
+2. Set up an Expo/EAS account if not already done, and configure `eas.json` for both platforms.
+3. Run a build for **Android** (internal distribution) and confirm it installs and opens on a real Android device.
+4. Run a build for **iOS** via EAS Build, submit to **TestFlight**, and confirm it installs and opens on a real iPhone.
+5. Do not proceed to Task 2 until both of the above are confirmed working. This is the step most likely to surface signing/certificate friction — better to hit that now than after weeks of feature code.
+6. Document the exact steps taken (Apple Developer account setup, EAS project linking, any certificates generated) in a `BUILD_SETUP.md` so this is repeatable.
+
+## Task 2 — Auth screens (wire to Phase 1 backend)
+- Enrollment invite entry screen (paste/open invite link)
+- Phone number confirmation + OTP entry screen
+- Store the issued auth token securely on-device (use `expo-secure-store`, not plain AsyncStorage, since this token represents account access)
+- Basic "logged in" state that persists across app restarts
+
+## Task 3 — Group + member list
+- Screen showing groups the logged-in member belongs to
+- Screen showing members of a given group (name only — respect the existing role-based visibility from Phase 1: ordinary members should not see other members' phone numbers, only admins should)
+- Basic "create group" flow (admin-only, per Phase 1 role model)
+
+## Task 4 — Core messaging
+- Chat screen: send and receive plain text messages in a group, in real time, via WebSocket
+- Message persistence: messages should load from backend history when reopening a chat, not just live ones
+- Basic delivery indicator (sent/delivered) — read receipts can wait for a later phase
+- No message editing/deletion needed yet
+
+## Task 5 — Raven brand theme
+- Apply the Raven visual identity: orange (#F87920, primary accent) and plum-black (#1A1A3C, primary dark/background) as the core theme colors. Use #EC5837 (deep red-orange, from the logo's gradient ring) as a secondary accent for alert/warning states. Body text on dark backgrounds should use a soft off-white (#F2F2F2), not pure white.
+- Use the icon-only cropped logo (square version, no rounded corners baked in) as the app icon in `app.json`/`eas.json` config
+- Basic typography and color theme file (single source of truth for colors, not hardcoded per-screen) so Phase 3/4 UI work builds on a consistent system
+
+## Explicit constraints
+- No message forwarding/copy-paste blocking yet — that's Phase 3, don't build it prematurely
+- No screenshot detection, no FLAG_SECURE, no watermarking — Phase 3
+- No meeting summary drawer or action items — Phase 4
+- Auth token must be stored via `expo-secure-store`, never plain AsyncStorage or hardcoded
+- All API calls to the backend should go through a single configured base URL (env-based), not hardcoded per-call, so switching between dev/prod backend is trivial
+
+## Deliverable for this phase
+A working Expo app, installable on a real Android device and a real iPhone (via TestFlight), where two enrolled test members can log in, see their shared group, and send/receive text messages in real time. Themed with Raven's brand colors and icon.
+
+## Explicitly out of scope this phase
+- Any privacy/security features (Phase 3)
+- Meeting summaries, action items (Phase 4)
+- Voice notes
+- Push notifications (nice to have if time allows, but not required for this phase's definition of done)
