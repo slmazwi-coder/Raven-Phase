@@ -1,0 +1,33 @@
+# Raven — Phase 1 Verification (for Replit Agent)
+
+Before we move to Phase 2, verify the following about the current backend and report back with actual evidence (query results, curl output, code snippets) for each — not just "yes it works."
+
+## 1. OTP storage
+- Show me the actual `otp_codes` table schema and a sample row (after generating one test OTP).
+- Confirm the code is stored as a hash (e.g. bcrypt/sha256), not plaintext. If it's currently stored in plaintext, fix it now and show me the corrected schema + code.
+
+## 2. No public self-registration
+- List every endpoint that can create a `members` row.
+- Confirm the ONLY path to creating a member is: valid unexpired `enrollment_invites` token → OTP verification. There should be no endpoint that lets someone register with just a phone number and no prior admin-created invite.
+- If you find a gap, close it and show me the diff.
+
+## 3. Rate limiting on OTP requests
+- Show me the actual rate-limiting logic for `/enroll/request-otp`.
+- Run a real test: call it 4 times in a row for the same number within a minute and show me the actual response on the 4th call. It should be rejected (429 or similar), not silently succeed.
+- Confirm the limit resets after the stated window (1 hour).
+
+## 4. Full happy path, with real output
+Walk through and show me the actual request/response for each step:
+1. `POST /admin/invites` — show the created invite record
+2. `POST /enroll/verify-invite` — show the response
+3. `POST /enroll/request-otp` — confirm SMS actually sends (or show me how to check the Twilio log)
+4. `POST /enroll/verify-otp` — show the created member record and issued auth token
+5. `POST /enroll/register-device` — show the created device record
+
+## 5. Admin auth
+- Confirm `/admin/*` endpoints actually reject requests without a valid admin session/token — show me a test call without auth returning 401/403, not 200.
+
+## 6. Basic hygiene check
+- Confirm the Twilio Auth Token and any DB credentials are in Replit Secrets, not hardcoded anywhere in the codebase or committed to git history. Search the repo for the literal token value to be sure.
+
+Report back with a short pass/fail per section, and fix anything that fails before we move to Phase 2.
