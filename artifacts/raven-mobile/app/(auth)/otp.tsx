@@ -30,6 +30,7 @@ export default function OtpScreen() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
@@ -51,10 +52,15 @@ export default function OtpScreen() {
     if (!cellNumber || sendingOtp) return;
     setSendingOtp(true);
     setError(null);
+    setDevOtp(null);
     try {
-      await requestOtp(cellNumber);
+      const res = await requestOtp(cellNumber);
       setOtpSent(true);
       setCountdown(60);
+      if (res.dev_otp) {
+        setOtp(res.dev_otp);
+        setDevOtp(res.dev_otp);
+      }
       setTimeout(() => inputRef.current?.focus(), 400);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -165,6 +171,14 @@ export default function OtpScreen() {
       {renderDigitBoxes()}
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      {devOtp ? (
+        <View style={styles.devOtpBanner}>
+          <Text style={styles.devOtpText}>
+            Dev OTP: <Text style={styles.devOtpCode}>{devOtp}</Text>
+          </Text>
+        </View>
+      ) : null}
 
       {/* Verify button */}
       <Pressable
@@ -312,5 +326,23 @@ const styles = StyleSheet.create({
   },
   resendTextDisabled: {
     color: C.textTertiary,
+  },
+  devOtpBanner: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: C.radius,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FFB74D',
+  },
+  devOtpText: {
+    color: '#E65100',
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+  },
+  devOtpCode: {
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1,
   },
 });
