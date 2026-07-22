@@ -1,0 +1,3 @@
+- [Raven project overview](raven-overview.md) — closed invite-only chat app; Phase 1 (API) done, Phase 2 (mobile) done.
+- [Raven WebSocket architecture](raven-ws.md) — WS on same HTTP server; esbuild must mark `ws` as external.
+- [Raven color tokens](raven-colors.md) — always-dark theme; both light+dark keys point to same palette.
