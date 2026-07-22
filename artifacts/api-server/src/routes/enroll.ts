@@ -21,6 +21,8 @@ const router: IRouter = Router();
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_RATE_LIMIT = 3; // max per number per hour
 
+const isDev = process.env.NODE_ENV !== "production";
+
 // POST /api/enroll/verify-invite
 // Public — check that an invite token is valid and not expired
 router.post("/enroll/verify-invite", async (req, res): Promise<void> => {
@@ -118,14 +120,21 @@ router.post("/enroll/request-otp", async (req, res): Promise<void> => {
   });
 
   const smsResult = await sendOtpSms(cellNumber, code);
-  if (!smsResult.ok && twilioConfigured()) {
+  if (!smsResult.ok && !isDev) {
     req.log.error({ error: smsResult.error }, "Failed to send OTP SMS");
     res.status(502).json({ error: "Failed to send OTP. Please try again." });
     return;
   }
 
-  // In dev (no Twilio), surface the OTP in the response so you can test
-  const devPayload = twilioConfigured() ? {} : { dev_otp: code };
+  if (!smsResult.ok) {
+    req.log.warn(
+      { error: smsResult.error },
+      "SMS send failed or Twilio not configured — returning dev OTP",
+    );
+  }
+
+  // In non-production environments, surface the OTP for testing when SMS could not be sent
+  const devPayload = isDev && !smsResult.ok ? { dev_otp: code } : {};
 
   res.json({ ok: true, message: "OTP sent", ...devPayload });
 });

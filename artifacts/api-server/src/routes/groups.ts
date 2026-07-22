@@ -92,8 +92,8 @@ router.get("/groups/:id/members", async (req, res): Promise<void> => {
     .select({
       id: membersTable.id,
       fullName: membersTable.fullName,
-      // Expose cell number only to admins
-      cellNumber: isAdmin ? membersTable.cellNumber : undefined,
+      // Always select and strip below for non-admins
+      cellNumber: membersTable.cellNumber,
       role: membersTable.role,
       status: membersTable.status,
       roleInGroup: groupMembersTable.roleInGroup,
