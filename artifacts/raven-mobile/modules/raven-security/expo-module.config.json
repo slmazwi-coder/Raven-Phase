@@ -1,0 +1,10 @@
+{
+  "name": "raven-security",
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["RavenSecurityModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.ravensecurity.RavenSecurityModule"]
+  }
+}
