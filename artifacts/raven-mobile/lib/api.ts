@@ -108,10 +108,10 @@ export interface VerifyOtpResponse {
   member: { id: string; cellNumber: string; role: string; status: string };
 }
 
-export function verifyOtp(cellNumber: string, code: string) {
+export function verifyOtp(cellNumber: string, code: string, fullName?: string) {
   return apiRequest<VerifyOtpResponse>('/enroll/verify-otp', {
     method: 'POST',
-    body: { cell_number: cellNumber, code },
+    body: { cell_number: cellNumber, code, full_name: fullName },
   });
 }
 

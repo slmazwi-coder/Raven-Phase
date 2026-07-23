@@ -8,6 +8,21 @@ const EXEMPT_PATHS = [
   "/api/enroll/verify-otp",
 ];
 
+const isReplit = !!(
+  process.env.REPL_ID ||
+  process.env.REPLIT_DOMAINS ||
+  process.env.REPLIT_DEV_DOMAIN ||
+  process.env.REPLIT_DEPLOYMENT
+);
+
+function isDevEnvironment(): boolean {
+  if (process.env.RAVEN_SKIP_ATTESTATION === "true") return true;
+  if (process.env.RAVEN_SKIP_ATTESTATION === "false") return false;
+  if (process.env.NODE_ENV !== "production") return true;
+  // Replit preview builds set NODE_ENV=production but not REPLIT_DEPLOYMENT
+  return isReplit && !process.env.REPLIT_DEPLOYMENT;
+}
+
 declare global {
   namespace Express {
     interface Request {
@@ -37,7 +52,7 @@ export function requireAttestation(
 
   // Dev/testing override for simulators, emulators, and web previews where
   // App Attest / Play Integrity cannot produce a valid token.
-  if (process.env.RAVEN_SKIP_ATTESTATION === "true") {
+  if (isDevEnvironment()) {
     next();
     return;
   }
