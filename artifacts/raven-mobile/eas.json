@@ -12,6 +12,10 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "cbaf63db-b52d-4bcf-a548-19e3ea95afaf-00-2x0qbnsac4u4h.expo.janeway.replit.dev",
+        "RAVEN_SKIP_ATTESTATION": "true"
       }
     },
     "production": {

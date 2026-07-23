@@ -26,6 +26,9 @@ export function getAttestationHeader(): string | null {
 
 /** Generates a fresh attestation token and caches it. */
 export async function refreshAttestation(): Promise<string | null> {
+  if (process.env.RAVEN_SKIP_ATTESTATION === 'true') {
+    return null;
+  }
   try {
     const RavenSecurityModule = await loadSecurityModule();
     if (!RavenSecurityModule?.getAttestationToken) {
