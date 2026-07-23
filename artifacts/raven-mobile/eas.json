@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 10.0.0"
+    "version": ">= 10.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -11,6 +12,11 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "api-server-ashy-delta.vercel.app",
+        "EXPO_PUBLIC_WS_DOMAIN": "raven-ws-production.up.railway.app",
+        "RAVEN_SKIP_ATTESTATION": "true"
       }
     },
     "production": {

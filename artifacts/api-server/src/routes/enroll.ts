@@ -76,30 +76,11 @@ router.post("/enroll/verify-invite", async (req, res): Promise<void> => {
 });
 
 // POST /api/enroll/request-otp
-// Public — send an OTP to the given cell number (must match an active invite)
+// Public — send an OTP to the given cell number (invite-free onboarding)
 router.post("/enroll/request-otp", async (req, res): Promise<void> => {
   const { cell_number: cellNumber } = req.body as { cell_number?: string };
   if (!cellNumber || typeof cellNumber !== "string") {
     res.status(400).json({ error: "cell_number is required (E.164 format)" });
-    return;
-  }
-
-  // Require an active, unused, unexpired invite for this number
-  const [invite] = await db
-    .select()
-    .from(enrollmentInvitesTable)
-    .where(
-      and(
-        eq(enrollmentInvitesTable.cellNumber, cellNumber),
-        isNull(enrollmentInvitesTable.usedAt),
-        gt(enrollmentInvitesTable.expiresAt, new Date()),
-      ),
-    );
-
-  if (!invite) {
-    res
-      .status(403)
-      .json({ error: "No valid invite found for this number. Contact an admin." });
     return;
   }
 
@@ -162,9 +143,10 @@ router.post("/enroll/request-otp", async (req, res): Promise<void> => {
 // POST /api/enroll/verify-otp
 // Public — verify the OTP and issue an auth token
 router.post("/enroll/verify-otp", async (req, res): Promise<void> => {
-  const { cell_number: cellNumber, code } = req.body as {
+  const { cell_number: cellNumber, code, full_name: fullName } = req.body as {
     cell_number?: string;
     code?: string;
+    full_name?: string;
   };
   if (!cellNumber || !code) {
     res.status(400).json({ error: "cell_number and code are required" });
@@ -223,30 +205,14 @@ router.post("/enroll/verify-otp", async (req, res): Promise<void> => {
     .set({ verifiedAt: new Date() })
     .where(eq(otpCodesTable.id, otpRecord.id));
 
-  // Mark invite as used and create the member
-  const [invite] = await db
-    .update(enrollmentInvitesTable)
-    .set({ usedAt: new Date() })
-    .where(
-      and(
-        eq(enrollmentInvitesTable.cellNumber, cellNumber),
-        isNull(enrollmentInvitesTable.usedAt),
-        gt(enrollmentInvitesTable.expiresAt, new Date()),
-      ),
-    )
-    .returning();
-
-  if (!invite) {
-    req.log.error({ cellNumber }, "OTP verified but no valid invite found");
-    res.status(409).json({ error: "Invite not found or already used" });
-    return;
-  }
-
   // Check if member already exists (re-enrollment guard)
   const [existingMember] = await db
     .select()
     .from(membersTable)
     .where(eq(membersTable.cellNumber, cellNumber));
+
+  const displayName =
+    typeof fullName === "string" && fullName.trim() ? fullName.trim() : cellNumber;
 
   const member =
     existingMember ??
@@ -254,7 +220,7 @@ router.post("/enroll/verify-otp", async (req, res): Promise<void> => {
       await db
         .insert(membersTable)
         .values({
-          fullName: cellNumber, // placeholder until register-device collects name
+          fullName: displayName,
           cellNumber,
           role: "member",
           status: "active",
@@ -282,12 +248,23 @@ router.post(
   "/enroll/register-device",
   requireAuth,
   async (req, res): Promise<void> => {
-    const { platform, device_identifier: deviceIdentifier, public_key: publicKey } =
-      req.body as {
-        platform?: string;
-        device_identifier?: string;
-        public_key?: string;
-      };
+    const {
+      platform,
+      device_identifier: deviceIdentifier,
+      public_key: publicKey,
+      attestation: bodyAttestation,
+    } = req.body as {
+      platform?: string;
+      device_identifier?: string;
+      public_key?: string;
+      attestation?: string;
+    };
+
+    // The attestation middleware validates the X-Raven-Attestation header;
+    // fall back to an explicit body field if the route is called directly.
+    const headerAttestation = req.headers["x-raven-attestation"];
+    const attestation =
+      typeof headerAttestation === "string" ? headerAttestation : (bodyAttestation ?? null);
 
     if (!platform || !deviceIdentifier) {
       res.status(400).json({ error: "platform and device_identifier are required" });
@@ -306,6 +283,7 @@ router.post(
         memberId,
         platform: platform as "ios" | "android",
         deviceIdentifier,
+        attestation: attestation ?? null,
         publicKey: publicKey ?? null,
         allowListed: true,
       })

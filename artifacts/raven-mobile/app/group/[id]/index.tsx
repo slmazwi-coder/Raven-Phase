@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Platform,
   Pressable,
@@ -19,6 +20,7 @@ import colors from '@/constants/colors';
 import { fetchMessages, fetchGroupMembers, type ChatMessage } from '@/lib/api';
 import { useGroupChat } from '@/lib/ws';
 import { useAuth } from '@/context/AuthContext';
+import { useSecurity } from '@/context/SecurityContext';
 
 const C = colors.light;
 
@@ -66,9 +68,36 @@ export default function ChatScreen() {
   const router = useRouter();
   const { id: groupId } = useLocalSearchParams<{ id: string }>();
   const { token, member } = useAuth();
+  const { setActiveGroupId, lastEnforcement, clearLastEnforcement } = useSecurity();
 
   const [inputText, setInputText] = useState('');
   const inputRef = useRef<TextInput>(null);
+
+  // Register this chat as the active group for screenshot/recording reporting
+  useEffect(() => {
+    setActiveGroupId(groupId ?? null);
+    return () => setActiveGroupId(null);
+  }, [groupId, setActiveGroupId]);
+
+  // React to enforcement actions returned by /incidents/report
+  useEffect(() => {
+    if (!lastEnforcement) return;
+
+    const messages: Record<string, string> = {
+      warn: 'Screenshot/recording detected. This incident has been logged.',
+      mute: `You have been muted until ${lastEnforcement.mutedUntil ? new Date(lastEnforcement.mutedUntil).toLocaleString() : 'the expiry time'}`,
+      remove: 'You have been removed from this group.',
+      ban: 'You have been banned from Raven.',
+    };
+
+    Alert.alert('Security policy enforced', messages[lastEnforcement.action] ?? 'A security policy was enforced.');
+
+    if (lastEnforcement.action === 'remove' || lastEnforcement.action === 'ban') {
+      router.replace('/(tabs)');
+    }
+
+    clearLastEnforcement();
+  }, [lastEnforcement, clearLastEnforcement, router]);
 
   // Load group name via members endpoint (or from group detail)
   const { data: membersData } = useQuery({

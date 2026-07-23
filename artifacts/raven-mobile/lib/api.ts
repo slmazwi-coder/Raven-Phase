@@ -6,6 +6,8 @@
  * REPLIT_DEV_DOMAIN; swap for your production domain when deploying).
  */
 
+import { getAttestationHeader, refreshAttestation } from './attestation';
+
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 export class ApiError extends Error {
@@ -25,6 +27,7 @@ export async function apiRequest<T>(
     body?: unknown;
     token?: string | null;
   } = {},
+  allowAttestationRetry = true,
 ): Promise<T> {
   const { method = 'GET', body, token } = options;
 
@@ -35,6 +38,11 @@ export async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const attestation = getAttestationHeader();
+  if (attestation) {
+    headers['X-Raven-Attestation'] = attestation;
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
@@ -43,12 +51,29 @@ export async function apiRequest<T>(
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
+    let json: { error?: string } = {};
     try {
-      const json = await res.json();
+      json = await res.json();
       message = json.error ?? message;
     } catch {
       // ignore
     }
+
+    // If the backend rejected the request because of a missing/invalid attestation
+    // token, try to refresh it once and retry the request.
+    if (
+      allowAttestationRetry &&
+      res.status === 403 &&
+      (json.error ?? '').toLowerCase().includes('attestation')
+    ) {
+      try {
+        await refreshAttestation();
+      } catch {
+        // refreshAttestation logs its own warnings; fall through and throw.
+      }
+      return apiRequest(path, options, false);
+    }
+
     throw new ApiError(res.status, message);
   }
 
@@ -83,10 +108,10 @@ export interface VerifyOtpResponse {
   member: { id: string; cellNumber: string; role: string; status: string };
 }
 
-export function verifyOtp(cellNumber: string, code: string) {
+export function verifyOtp(cellNumber: string, code: string, fullName?: string) {
   return apiRequest<VerifyOtpResponse>('/enroll/verify-otp', {
     method: 'POST',
-    body: { cell_number: cellNumber, code },
+    body: { cell_number: cellNumber, code, full_name: fullName },
   });
 }
 
@@ -148,4 +173,28 @@ export function fetchMessages(groupId: string, token: string, before?: string) {
     `/groups/${groupId}/messages${query}`,
     { token },
   );
+}
+
+// ─── Security / Incidents ───────────────────────────────────────────────────
+
+export interface ReportIncidentResponse {
+  ok: boolean;
+  enforcement: {
+    action: 'warn' | 'mute' | 'remove' | 'ban';
+    mutedUntil?: string;
+  };
+}
+
+export interface ReportIncidentPayload {
+  group_id: string;
+  event_type: 'screenshot' | 'recording_start' | 'recording_stop';
+  timestamp: number;
+}
+
+export function reportIncident(token: string, payload: ReportIncidentPayload) {
+  return apiRequest<ReportIncidentResponse>('/incidents/report', {
+    method: 'POST',
+    token,
+    body: payload,
+  });
 }

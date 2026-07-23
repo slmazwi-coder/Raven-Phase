@@ -13,56 +13,44 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
-import { verifyInvite, ApiError } from '@/lib/api';
+
+function normalizeCellNumber(input: string): string | null {
+  const digits = input.replace(/\D/g, '');
+  if (digits.length < 8) return null;
+  return input.trim().startsWith('+') ? input.trim() : `+${digits}`;
+}
 
 export default function InviteScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [token, setToken] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [cellNumber, setCellNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
 
   async function handleContinue() {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      setError('Paste your invite link or token to continue.');
+    const name = fullName.trim();
+    const normalized = normalizeCellNumber(cellNumber);
+    if (!name) {
+      setError('Enter your full name.');
       return;
     }
-
-    // Accept full URLs or bare tokens
-    let inviteToken = trimmed;
-    try {
-      const parsed = new URL(trimmed);
-      inviteToken = parsed.searchParams.get('token') ?? trimmed;
-    } catch {
-      // Not a URL — treat as raw token
+    if (!normalized) {
+      setError('Enter a valid phone number with country code (e.g. +15550000001).');
+      return;
     }
 
     setError(null);
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    try {
-      const res = await verifyInvite(inviteToken);
-      if (!res.valid) {
-        setError('This invite is invalid or has expired.');
-        return;
-      }
-      router.push({
-        pathname: '/(auth)/otp',
-        params: { cellNumber: res.cellNumber, inviteToken },
-      });
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError('Could not verify invite. Check your connection and try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
+    router.push({
+      pathname: '/(auth)/otp',
+      params: { fullName: name, cellNumber: normalized },
+    });
+    setLoading(false);
   }
 
   return (
@@ -76,20 +64,34 @@ export default function InviteScreen() {
 
       <Text style={styles.title}>Join Raven</Text>
       <Text style={styles.subtitle}>
-        Paste your invite link or token below to get started.
+        Enter your name and phone number to get started.
       </Text>
 
       <TextInput
         style={[styles.input, error ? styles.inputError : null]}
-        placeholder="Invite token or link…"
+        placeholder="Full name"
         placeholderTextColor={colors.light.textTertiary}
-        value={token}
+        value={fullName}
         onChangeText={(t) => {
-          setToken(t);
+          setFullName(t);
           if (error) setError(null);
         }}
-        autoCapitalize="none"
+        autoCapitalize="words"
         autoCorrect={false}
+        returnKeyType="next"
+        multiline={false}
+      />
+
+      <TextInput
+        style={[styles.input, error ? styles.inputError : null]}
+        placeholder="Phone number (e.g. +15550000001)"
+        placeholderTextColor={colors.light.textTertiary}
+        value={cellNumber}
+        onChangeText={(t) => {
+          setCellNumber(t);
+          if (error) setError(null);
+        }}
+        keyboardType="phone-pad"
         returnKeyType="done"
         onSubmitEditing={handleContinue}
         multiline={false}

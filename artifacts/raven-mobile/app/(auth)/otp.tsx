@@ -13,14 +13,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
 import { requestOtp, verifyOtp, registerDevice, ApiError } from '@/lib/api';
+import { refreshAttestation } from '@/lib/attestation';
 import { useAuth } from '@/context/AuthContext';
 
 export default function OtpScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { cellNumber, inviteToken } = useLocalSearchParams<{
+  const { cellNumber, fullName } = useLocalSearchParams<{
     cellNumber: string;
-    inviteToken: string;
+    fullName?: string;
   }>();
   const { login, getDeviceId } = useAuth();
 
@@ -89,16 +90,14 @@ export default function OtpScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     try {
-      const res = await verifyOtp(cellNumber, code);
+      const res = await verifyOtp(cellNumber, code, fullName);
 
-      // Register this device
+      // Register this device. Generate an attestation token first so the
+      // backend can bind this device to an App Attest / Play Integrity assertion.
       const deviceId = await getDeviceId();
       const platform = Platform.OS === 'web' ? 'android' : Platform.OS; // fallback for web
-      try {
-        await registerDevice(res.token, platform, deviceId);
-      } catch {
-        // Device registration is best-effort in Phase 2
-      }
+      await refreshAttestation();
+      await registerDevice(res.token, platform, deviceId);
 
       await login(res.token);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

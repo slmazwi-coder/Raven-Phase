@@ -12,13 +12,13 @@ export function useGroupChat(groupId: string | null, token: string | null) {
   useEffect(() => {
     if (!token || !groupId) return;
 
-    const domain = process.env.EXPO_PUBLIC_DOMAIN;
+    const domain = process.env.EXPO_PUBLIC_WS_DOMAIN || process.env.EXPO_PUBLIC_DOMAIN;
     if (!domain) {
-      console.warn('[ws] EXPO_PUBLIC_DOMAIN not set — WebSocket disabled');
+      console.warn('[ws] EXPO_PUBLIC_WS_DOMAIN / EXPO_PUBLIC_DOMAIN not set — WebSocket disabled');
       return;
     }
 
-    // Always use wss:// — Replit proxy is TLS-terminated on all platforms
+    // Always use wss:// — Replit/Railway/Fly proxies are TLS-terminated
     const protocol = 'wss';
     const url = `${protocol}://${domain}/ws?token=${encodeURIComponent(token)}`;
 

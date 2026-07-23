@@ -14,6 +14,7 @@ import {
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { SecurityProvider } from '@/context/SecurityContext';
 import colors from '@/constants/colors';
 
 SplashScreen.preventAutoHideAsync();
@@ -85,7 +86,9 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
               <AuthProvider>
-                <RootLayoutNav />
+                <SecurityProvider>
+                  <RootLayoutNav />
+                </SecurityProvider>
               </AuthProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
