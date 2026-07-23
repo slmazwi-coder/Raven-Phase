@@ -2,7 +2,7 @@ const {
   withMainActivity,
   withAndroidManifest,
   createRunOncePlugin,
-} = require("@expo/config-plugins");
+} = require("expo/config-plugins");
 
 const FLAG_SECURE_IMPORT = "import android.view.WindowManager";
 const FLAG_SECURE_LINE =
