@@ -13,7 +13,7 @@ COPY lib/db/package.json ./lib/db/package.json
 COPY lib/api-zod/package.json ./lib/api-zod/package.json
 
 # Install dependencies (dev deps needed for the esbuild build step)
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
 
 # Copy source and build the api-server bundle
 COPY . .
