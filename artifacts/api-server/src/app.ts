@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { requireAttestation } from "./middleware/requireAttestation";
 
 const app: Express = express();
 
@@ -28,6 +29,7 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(requireAttestation);
 
 app.use("/api", router);
 

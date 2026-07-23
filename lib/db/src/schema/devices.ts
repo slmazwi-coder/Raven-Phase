@@ -13,6 +13,8 @@ export const devicesTable = pgTable("devices", {
   platform: devicePlatformEnum("platform").notNull(),
   /** Placeholder: will bind to App Attest / Play Integrity in a later phase */
   deviceIdentifier: text("device_identifier").notNull(),
+  /** Raw attestation token from App Attest / Play Integrity */
+  attestation: text("attestation"),
   /**
    * Task 4 — Encryption groundwork:
    * Placeholder for Signal Protocol X3DH identity public key (IK_pub).

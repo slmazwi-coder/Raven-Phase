@@ -282,12 +282,23 @@ router.post(
   "/enroll/register-device",
   requireAuth,
   async (req, res): Promise<void> => {
-    const { platform, device_identifier: deviceIdentifier, public_key: publicKey } =
-      req.body as {
-        platform?: string;
-        device_identifier?: string;
-        public_key?: string;
-      };
+    const {
+      platform,
+      device_identifier: deviceIdentifier,
+      public_key: publicKey,
+      attestation: bodyAttestation,
+    } = req.body as {
+      platform?: string;
+      device_identifier?: string;
+      public_key?: string;
+      attestation?: string;
+    };
+
+    // The attestation middleware validates the X-Raven-Attestation header;
+    // fall back to an explicit body field if the route is called directly.
+    const headerAttestation = req.headers["x-raven-attestation"];
+    const attestation =
+      typeof headerAttestation === "string" ? headerAttestation : (bodyAttestation ?? null);
 
     if (!platform || !deviceIdentifier) {
       res.status(400).json({ error: "platform and device_identifier are required" });
@@ -306,6 +317,7 @@ router.post(
         memberId,
         platform: platform as "ios" | "android",
         deviceIdentifier,
+        attestation: attestation ?? null,
         publicKey: publicKey ?? null,
         allowListed: true,
       })

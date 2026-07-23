@@ -16,9 +16,22 @@ export const groupRoleEnum = pgEnum("group_role", [
   "member",
 ]);
 
+export const groupPolicyEnum = pgEnum("group_policy", [
+  "warn",
+  "mute",
+  "remove",
+  "ban",
+]);
+
 export const groupsTable = pgTable("groups", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  screenshotPolicy: groupPolicyEnum("screenshot_policy")
+    .notNull()
+    .default("warn"),
+  screenRecordingPolicy: groupPolicyEnum("screen_recording_policy")
+    .notNull()
+    .default("warn"),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => membersTable.id),
@@ -37,6 +50,7 @@ export const groupMembersTable = pgTable(
       .notNull()
       .references(() => membersTable.id),
     roleInGroup: groupRoleEnum("role_in_group").notNull().default("member"),
+    mutedUntil: timestamp("muted_until", { withTimezone: true }),
     joinedAt: timestamp("joined_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
