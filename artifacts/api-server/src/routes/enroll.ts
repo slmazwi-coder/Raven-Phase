@@ -21,7 +21,25 @@ const router: IRouter = Router();
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_RATE_LIMIT = 3; // max per number per hour
 
-const isDev = process.env.NODE_ENV !== "production";
+const isReplit = !!(
+  process.env.REPL_ID ||
+  process.env.REPLIT_DOMAINS ||
+  process.env.REPLIT_DEV_DOMAIN ||
+  process.env.REPLIT_DEPLOYMENT
+);
+
+function isDevEnvironment(): boolean {
+  if (process.env.RAVEN_DEV_OTP === "true") return true;
+  if (process.env.RAVEN_DEV_OTP === "false") return false;
+
+  if (process.env.NODE_ENV === "production") {
+    // In Replit, a production NODE_ENV without REPLIT_DEPLOYMENT means a build/preview,
+    // not the published app. In non-Replit production, keep dev OTP disabled.
+    return isReplit && !process.env.REPLIT_DEPLOYMENT;
+  }
+
+  return true;
+}
 
 // POST /api/enroll/verify-invite
 // Public — check that an invite token is valid and not expired
@@ -119,8 +137,10 @@ router.post("/enroll/request-otp", async (req, res): Promise<void> => {
     attempts: 0,
   });
 
+  const devMode = isDevEnvironment();
+
   const smsResult = await sendOtpSms(cellNumber, code);
-  if (!smsResult.ok && !isDev) {
+  if (!smsResult.ok && !devMode) {
     req.log.error({ error: smsResult.error }, "Failed to send OTP SMS");
     res.status(502).json({ error: "Failed to send OTP. Please try again." });
     return;
@@ -134,7 +154,7 @@ router.post("/enroll/request-otp", async (req, res): Promise<void> => {
   }
 
   // In non-production environments, surface the OTP for testing when SMS could not be sent
-  const devPayload = isDev && !smsResult.ok ? { dev_otp: code } : {};
+  const devPayload = devMode && !smsResult.ok ? { dev_otp: code } : {};
 
   res.json({ ok: true, message: "OTP sent", ...devPayload });
 });

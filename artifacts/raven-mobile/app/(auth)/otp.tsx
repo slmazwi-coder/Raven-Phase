@@ -60,8 +60,11 @@ export default function OtpScreen() {
       if (res.dev_otp) {
         setOtp(res.dev_otp);
         setDevOtp(res.dev_otp);
+        // Auto-verify in dev mode so the tester doesn't have to tap Verify
+        setTimeout(() => handleVerify(res.dev_otp), 150);
+      } else {
+        setTimeout(() => inputRef.current?.focus(), 400);
       }
-      setTimeout(() => inputRef.current?.focus(), 400);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -73,8 +76,8 @@ export default function OtpScreen() {
     }
   }
 
-  async function handleVerify() {
-    const code = otp.trim();
+  async function handleVerify(explicitCode?: string) {
+    const code = (explicitCode ?? otp).trim();
     if (code.length !== 6) {
       setError('Enter the 6-digit code sent to your phone.');
       return;
@@ -187,7 +190,7 @@ export default function OtpScreen() {
           pressed && styles.buttonPressed,
           (verifying || otp.length !== 6) && styles.buttonDisabled,
         ]}
-        onPress={handleVerify}
+        onPress={() => handleVerify()}
         disabled={verifying || otp.length !== 6}
       >
         {verifying ? (
