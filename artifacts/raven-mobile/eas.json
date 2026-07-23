@@ -15,6 +15,7 @@
       },
       "env": {
         "EXPO_PUBLIC_DOMAIN": "api-server-ashy-delta.vercel.app",
+        "EXPO_PUBLIC_WS_DOMAIN": "",
         "RAVEN_SKIP_ATTESTATION": "true"
       }
     },

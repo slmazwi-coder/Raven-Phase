@@ -1,0 +1,8 @@
+node_modules
+.vercel
+.pnpm-store
+dist
+api
+*.log
+.DS_Store
+.env*
