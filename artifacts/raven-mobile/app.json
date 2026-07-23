@@ -38,6 +38,15 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": "https://replit.com/"
+      },
+      "eas": {
+        "projectId": "1f8c8173-444b-4199-953b-73fee373c161"
+      }
+    },
+    "owner": "boetsomies-team"
   }
 }
