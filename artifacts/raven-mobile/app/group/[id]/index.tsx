@@ -126,10 +126,16 @@ export default function ChatScreen() {
   });
 
   // Real-time WebSocket
-  const { messages: wsMessages, sendMessage, prependHistory } = useGroupChat(
-    groupId ?? null,
-    token,
-  );
+  const {
+    messages: wsMessages,
+    sendMessage,
+    sendTyping,
+    prependHistory,
+    typingUsers,
+    notifyTyping,
+    presence,
+    isConnected,
+  } = useGroupChat(groupId ?? null, token);
 
   // Merge history into WS state once loaded
   const historyMergedRef = useRef(false);
@@ -142,15 +148,51 @@ export default function ChatScreen() {
   }, [historyData, prependHistory]);
 
   const groupName = groupData?.group.name ?? 'Group';
-  const memberCount = membersData?.members.length ?? 0;
+  const members = membersData?.members ?? [];
+  const memberCount = members.length;
+  const otherMembers = members.filter((m) => m.id !== member?.id);
+  const isDirect = memberCount === 2 && otherMembers.length === 1;
+
+  function lastSeenText(date?: string | null) {
+    if (!date) return 'offline';
+    const diff = Date.now() - new Date(date).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'last seen just now';
+    if (mins < 60) return `last seen ${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `last seen ${hours}h ago`;
+    return `last seen ${Math.floor(hours / 24)}d ago`;
+  }
+
+  const otherMember = otherMembers[0];
+  const isOtherOnline = otherMember && !!presence[otherMember.id];
+  const headerSub = isDirect
+    ? isOtherOnline
+      ? 'online'
+      : lastSeenText(otherMember?.lastSeenAt)
+    : `${memberCount} member${memberCount !== 1 ? 's' : ''}`;
+
+  const typingText =
+    typingUsers.length > 0
+      ? `${typingUsers.length === 1 ? 'Someone' : `${typingUsers.length} people`} typing…`
+      : null;
 
   const handleSend = useCallback(() => {
     const content = inputText.trim();
     if (!content) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     sendMessage(content);
+    sendTyping(false);
     setInputText('');
-  }, [inputText, sendMessage]);
+  }, [inputText, sendMessage, sendTyping]);
+
+  const handleInputChange = useCallback(
+    (text: string) => {
+      setInputText(text);
+      if (text.trim()) notifyTyping();
+    },
+    [notifyTyping],
+  );
 
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -166,13 +208,19 @@ export default function ChatScreen() {
           style={styles.headerMeta}
           onPress={() => router.push(`/group/${groupId}/members`)}
         >
-          <Text style={styles.headerName} numberOfLines={1}>
-            {groupName}
-          </Text>
-          {memberCount > 0 ? (
-            <Text style={styles.headerSub}>
-              {memberCount} member{memberCount !== 1 ? 's' : ''}
+          <View style={styles.headerNameRow}>
+            <Text style={styles.headerName} numberOfLines={1}>
+              {groupName}
             </Text>
+            <View
+              style={[
+                styles.connectionDot,
+                { backgroundColor: isConnected ? '#34C759' : C.textTertiary },
+              ]}
+            />
+          </View>
+          {memberCount > 0 ? (
+            <Text style={styles.headerSub}>{headerSub}</Text>
           ) : null}
         </Pressable>
         <Pressable
@@ -229,13 +277,18 @@ export default function ChatScreen() {
         <View
           style={[styles.inputBar, { paddingBottom: bottomPadding + 8 }]}
         >
+          {typingText ? (
+            <View style={styles.typingBar}>
+              <Text style={styles.typingText}>{typingText}</Text>
+            </View>
+          ) : null}
           <TextInput
             ref={inputRef}
             style={styles.textInput}
             placeholder="Message…"
             placeholderTextColor={C.textTertiary}
             value={inputText}
-            onChangeText={setInputText}
+            onChangeText={handleInputChange}
             multiline
             maxLength={2000}
             returnKeyType="default"
@@ -282,6 +335,16 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
   },
   membersBtn: { padding: 6 },
+  headerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
 
   center: {
     flex: 1,
@@ -354,6 +417,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
     color: C.textTertiary,
+  },
+
+  typingBar: {
+    position: 'absolute',
+    top: -22,
+    left: 12,
+  },
+  typingText: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    color: C.textSecondary,
   },
 
   inputBar: {

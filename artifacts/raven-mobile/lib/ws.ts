@@ -4,10 +4,24 @@ import type { ChatMessage } from './api';
 
 export type WsMessage = ChatMessage;
 
+interface TypingUser {
+  memberId: string;
+  name?: string;
+  until: number;
+}
+
+interface PresenceState {
+  memberId: string;
+  online: boolean;
+}
+
 export function useGroupChat(groupId: string | null, token: string | null) {
   const [messages, setMessages] = useState<WsMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+  const [presence, setPresence] = useState<Record<string, boolean>>({});
   const wsRef = useRef<WebSocket | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!token || !groupId) return;
@@ -18,7 +32,6 @@ export function useGroupChat(groupId: string | null, token: string | null) {
       return;
     }
 
-    // Always use wss:// — Replit/Railway/Fly proxies are TLS-terminated
     const protocol = 'wss';
     const url = `${protocol}://${domain}/ws?token=${encodeURIComponent(token)}`;
 
@@ -48,20 +61,35 @@ export function useGroupChat(groupId: string | null, token: string | null) {
         const msg = JSON.parse(
           typeof event.data === 'string' ? event.data : event.data.toString(),
         );
+
         if (msg.type === 'message' && msg.groupId === groupId) {
           setMessages((prev) => {
-            // Deduplicate by id
             if (prev.some((m) => m.id === msg.id)) return prev;
             return [msg as WsMessage, ...prev];
           });
+        } else if (msg.type === 'typing' && msg.groupId === groupId) {
+          const until = Date.now() + 3500;
+          setTypingUsers((prev) => {
+            const filtered = prev.filter((u) => u.memberId !== msg.memberId);
+            if (!msg.isTyping) return filtered;
+            return [...filtered, { memberId: msg.memberId, until }];
+          });
+        } else if (msg.type === 'presence') {
+          setPresence((prev) => ({ ...prev, [msg.memberId]: msg.online }));
         }
       } catch {
         // ignore malformed frames
       }
     };
 
+    const clearStaleTyping = setInterval(() => {
+      const now = Date.now();
+      setTypingUsers((prev) => prev.filter((u) => u.until > now));
+    }, 1000);
+
     return () => {
       closed = true;
+      clearInterval(clearStaleTyping);
       ws.close();
       wsRef.current = null;
       setIsConnected(false);
@@ -78,14 +106,40 @@ export function useGroupChat(groupId: string | null, token: string | null) {
     [groupId],
   );
 
+  const sendTyping = useCallback(
+    (isTyping: boolean) => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'typing', groupId, isTyping }));
+      }
+    },
+    [groupId],
+  );
+
+  const notifyTyping = useCallback(() => {
+    sendTyping(true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      sendTyping(false);
+    }, 3000);
+  }, [sendTyping]);
+
   const prependHistory = useCallback((history: WsMessage[]) => {
     setMessages((prev) => {
       const ids = new Set(prev.map((m) => m.id));
       const fresh = history.filter((m) => !ids.has(m.id));
-      // History is ascending; WS messages prepend (descending order for inverted FlatList)
       return [...prev, ...fresh];
     });
   }, []);
 
-  return { messages, isConnected, sendMessage, prependHistory };
+  return {
+    messages,
+    isConnected,
+    typingUsers,
+    presence,
+    sendMessage,
+    sendTyping,
+    notifyTyping,
+    prependHistory,
+  };
 }
