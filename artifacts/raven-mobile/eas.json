@@ -13,6 +13,9 @@
       "android": {
         "buildType": "apk"
       },
+      "cache": {
+        "disabled": true
+      },
       "env": {
         "EXPO_PUBLIC_DOMAIN": "api-server-ashy-delta.vercel.app",
         "EXPO_PUBLIC_WS_DOMAIN": "raven-ws-production.up.railway.app",
