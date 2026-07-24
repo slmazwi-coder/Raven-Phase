@@ -1,8 +1,10 @@
 import React from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -10,8 +12,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useQuery } from '@tanstack/react-query';
 import colors from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
+import { fetchMember } from '@/lib/api';
 
 const C = colors.light;
 
@@ -23,10 +27,17 @@ const ROLE_COLORS: Record<string, string> = {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { member, logout } = useAuth();
+  const { member, token, logout } = useAuth();
 
+  const { data, isLoading } = useQuery({
+    queryKey: ['member', token],
+    queryFn: () => fetchMember(token!),
+    enabled: !!token,
+  });
+
+  const profile = data?.member;
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
-  const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const bottomPadding = insets.bottom;
 
   function handleLogout() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -46,62 +57,136 @@ export default function ProfileScreen() {
     );
   }
 
-  if (!member) return null;
-
-  const roleColor = ROLE_COLORS[member.role] ?? C.textSecondary;
+  const roleColor = ROLE_COLORS[member?.role ?? 'member'] ?? C.textSecondary;
 
   return (
     <View
       style={[
         styles.container,
-        { paddingTop: topPadding, paddingBottom: bottomPadding + 16 },
+        { paddingTop: topPadding },
       ]}
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
+        <Text style={styles.headerTitle}>Profile & Settings</Text>
       </View>
 
-      {/* Avatar */}
-      <View style={styles.avatarSection}>
-        <View style={styles.avatar}>
-          <Feather name="user" size={40} color={C.textSecondary} />
-        </View>
-        <View style={[styles.roleBadge, { backgroundColor: `${roleColor}22` }]}>
-          <Text style={[styles.roleText, { color: roleColor }]}>
-            {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: bottomPadding + 24 },
+        ]}
+      >
+        {/* Avatar */}
+        <View style={styles.avatarSection}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarInitial}>
+              {(profile?.fullName ?? member?.fullName ?? 'U').charAt(0).toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.name} numberOfLines={1}>
+            {profile?.fullName ?? member?.fullName ?? 'Raven User'}
           </Text>
-        </View>
-      </View>
-
-      {/* Info rows */}
-      <View style={styles.section}>
-        <View style={styles.infoRow}>
-          <Feather name="key" size={16} color={C.textSecondary} />
-          <View style={styles.infoBody}>
-            <Text style={styles.infoLabel}>Member ID</Text>
-            <Text style={styles.infoValue} numberOfLines={1}>
-              {member.id}
+          {profile?.cellNumber ? (
+            <Text style={styles.phone}>{profile.cellNumber}</Text>
+          ) : null}
+          <View style={[styles.roleBadge, { backgroundColor: `${roleColor}22` }]}>
+            <Text style={[styles.roleText, { color: roleColor }]}>
+              {member?.role
+                ? member.role.charAt(0).toUpperCase() + member.role.slice(1)
+                : 'Member'}
             </Text>
           </View>
         </View>
-      </View>
 
-      {/* Sign out */}
-      <View style={styles.section}>
+        {isLoading ? (
+          <ActivityIndicator color={C.primary} style={{ marginVertical: 12 }} />
+        ) : null}
+
+        {/* Account */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <View style={styles.card}>
+            <Row icon="user" label="Member ID" value={member?.id ?? ''} />
+            <Divider />
+            <Row icon="shield" label="Status" value={profile?.status ?? 'active'} />
+          </View>
+        </View>
+
+        {/* Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Settings</Text>
+          <View style={styles.card}>
+            <PressableRow icon="bell" label="Notifications" />
+            <Divider />
+            <PressableRow icon="lock" label="Privacy & Security" />
+            <Divider />
+            <PressableRow icon="help-circle" label="Help & Support" />
+            <Divider />
+            <PressableRow icon="info" label="About Raven" last />
+          </View>
+        </View>
+
+        {/* Sign out */}
         <Pressable
           onPress={handleLogout}
           style={({ pressed }) => [
-            styles.dangerRow,
-            pressed && styles.dangerRowPressed,
+            styles.signOutBtn,
+            pressed && styles.signOutBtnPressed,
           ]}
         >
           <Feather name="log-out" size={18} color={C.accent} />
-          <Text style={styles.dangerText}>Sign out</Text>
+          <Text style={styles.signOutText}>Sign out</Text>
         </Pressable>
+      </ScrollView>
+    </View>
+  );
+}
+
+function Row({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.row}>
+      <Feather name={icon} size={18} color={C.textSecondary} />
+      <View style={styles.rowBody}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.rowValue} numberOfLines={1}>
+          {value}
+        </Text>
       </View>
     </View>
   );
+}
+
+function PressableRow({
+  icon,
+  label,
+  last,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  label: string;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <Feather name={icon} size={18} color={C.textSecondary} />
+      <Text style={styles.rowLabelFlex}>{label}</Text>
+      <Feather name="chevron-right" size={18} color={C.textTertiary} />
+    </Pressable>
+  );
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
 }
 
 const styles = StyleSheet.create({
@@ -120,10 +205,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     color: C.text,
   },
+  scroll: {
+    paddingTop: 16,
+  },
   avatarSection: {
     alignItems: 'center',
-    paddingVertical: 36,
-    gap: 14,
+    paddingVertical: 28,
+    gap: 10,
   },
   avatar: {
     width: 96,
@@ -135,10 +223,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  avatarInitial: {
+    fontSize: 40,
+    fontFamily: 'Inter_700Bold',
+    color: C.primary,
+  },
+  name: {
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    color: C.text,
+    maxWidth: '80%',
+  },
+  phone: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    color: C.textSecondary,
+  },
   roleBadge: {
     paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 20,
+    marginTop: 2,
   },
   roleText: {
     fontSize: 13,
@@ -147,45 +252,73 @@ const styles = StyleSheet.create({
   },
   section: {
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+    color: C.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  card: {
     backgroundColor: C.surface,
     borderRadius: C.radius,
     overflow: 'hidden',
   },
-  infoRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     gap: 12,
   },
-  infoBody: {
+  rowPressed: {
+    backgroundColor: C.surfaceElevated,
+  },
+  rowBody: {
     flex: 1,
     gap: 2,
   },
-  infoLabel: {
-    fontSize: 11,
-    fontFamily: 'Inter_500Medium',
-    color: C.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  infoValue: {
+  rowLabel: {
     fontSize: 14,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     color: C.text,
   },
-  dangerRow: {
+  rowLabelFlex: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    color: C.text,
+  },
+  rowValue: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    color: C.textSecondary,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: C.border,
+    marginLeft: 46,
+  },
+  signOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
+    justifyContent: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingVertical: 14,
+    backgroundColor: `${C.accent}10`,
+    borderRadius: C.radius,
   },
-  dangerRowPressed: {
-    opacity: 0.6,
+  signOutBtnPressed: {
+    opacity: 0.7,
   },
-  dangerText: {
+  signOutText: {
     fontSize: 15,
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_600SemiBold',
     color: C.accent,
   },
 });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import colors from '@/constants/colors';
@@ -8,6 +9,10 @@ const C = colors.light;
 
 export default function TabLayout() {
   const isWeb = Platform.OS === 'web';
+  const insets = useSafeAreaInsets();
+
+  // Keep the tab bar above Android system gesture navigation / buttons
+  const tabBarHeight = (isWeb ? 84 : 60) + insets.bottom;
 
   return (
     <Tabs
@@ -19,7 +24,8 @@ export default function TabLayout() {
           backgroundColor: C.tabBar,
           borderTopWidth: 0,
           elevation: 0,
-          height: isWeb ? 84 : 60,
+          height: tabBarHeight,
+          paddingBottom: insets.bottom,
         },
         tabBarBackground: () => (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: C.tabBar }]} />
@@ -27,7 +33,7 @@ export default function TabLayout() {
         tabBarLabelStyle: {
           fontFamily: 'Inter_500Medium',
           fontSize: 11,
-          marginBottom: Platform.OS === 'ios' ? 0 : 4,
+          marginBottom: isWeb ? 0 : 4,
         },
       }}
     >

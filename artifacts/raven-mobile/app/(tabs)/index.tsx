@@ -63,6 +63,13 @@ export default function GroupsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Raven</Text>
+        <Pressable
+          onPress={() => router.push('/group/create')}
+          style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnPressed]}
+          hitSlop={12}
+        >
+          <Feather name="plus" size={22} color={C.primary} />
+        </Pressable>
       </View>
 
       {isLoading ? (
@@ -100,8 +107,31 @@ export default function GroupsScreen() {
               <Feather name="message-square" size={48} color={C.textTertiary} />
               <Text style={styles.emptyTitle}>No groups yet</Text>
               <Text style={styles.emptyText}>
-                Ask an admin to add you to a group.
+                Create a group or start a direct chat.
               </Text>
+              <View style={styles.emptyActions}>
+                <Pressable
+                  onPress={() => router.push('/group/new-dm')}
+                  style={({ pressed }) => [
+                    styles.actionBtn,
+                    styles.actionBtnSecondary,
+                    pressed && styles.actionBtnPressed,
+                  ]}
+                >
+                  <Feather name="message-circle" size={16} color={C.primary} />
+                  <Text style={styles.actionBtnSecondaryText}>New chat</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push('/group/create')}
+                  style={({ pressed }) => [
+                    styles.actionBtn,
+                    pressed && styles.actionBtnPressed,
+                  ]}
+                >
+                  <Feather name="plus" size={16} color="#fff" />
+                  <Text style={styles.actionBtnText}>Create group</Text>
+                </Pressable>
+              </View>
             </View>
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -117,6 +147,9 @@ const styles = StyleSheet.create({
     backgroundColor: C.background,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
@@ -127,6 +160,46 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     color: C.primary,
     letterSpacing: 1,
+  },
+  headerBtn: {
+    padding: 6,
+    borderRadius: 22,
+    backgroundColor: C.surface,
+  },
+  headerBtnPressed: {
+    opacity: 0.7,
+  },
+  emptyActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: C.primary,
+    borderRadius: C.radius,
+  },
+  actionBtnSecondary: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.primary,
+  },
+  actionBtnPressed: {
+    opacity: 0.8,
+  },
+  actionBtnText: {
+    color: '#fff',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+  },
+  actionBtnSecondaryText: {
+    color: C.primary,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
   },
   listContent: {
     paddingHorizontal: 16,

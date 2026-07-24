@@ -17,7 +17,12 @@ import { useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
-import { fetchMessages, fetchGroupMembers, type ChatMessage } from '@/lib/api';
+import {
+  fetchMessages,
+  fetchGroupMembers,
+  fetchGroup,
+  type ChatMessage,
+} from '@/lib/api';
 import { useGroupChat } from '@/lib/ws';
 import { useAuth } from '@/context/AuthContext';
 import { useSecurity } from '@/context/SecurityContext';
@@ -99,7 +104,14 @@ export default function ChatScreen() {
     clearLastEnforcement();
   }, [lastEnforcement, clearLastEnforcement, router]);
 
-  // Load group name via members endpoint (or from group detail)
+  // Load group detail
+  const { data: groupData } = useQuery({
+    queryKey: ['group', groupId, token],
+    queryFn: () => fetchGroup(groupId!, token!),
+    enabled: !!groupId && !!token,
+  });
+
+  // Load group members
   const { data: membersData } = useQuery({
     queryKey: ['group-members', groupId, token],
     queryFn: () => fetchGroupMembers(groupId!, token!),
@@ -129,8 +141,7 @@ export default function ChatScreen() {
     }
   }, [historyData, prependHistory]);
 
-  // Group name from query params or default
-  const groupName = `Group`;
+  const groupName = groupData?.group.name ?? 'Group';
   const memberCount = membersData?.members.length ?? 0;
 
   const handleSend = useCallback(() => {

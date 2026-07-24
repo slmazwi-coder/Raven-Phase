@@ -141,6 +141,41 @@ export function fetchGroups(token: string) {
   return apiRequest<{ groups: Group[] }>('/groups', { token });
 }
 
+export function fetchGroup(groupId: string, token: string) {
+  return apiRequest<{ group: Group }>(`/groups/${groupId}`, { token });
+}
+
+export function createGroup(
+  token: string,
+  body: { name: string; member_ids?: string[] },
+) {
+  return apiRequest<{ group: Group }>('/groups', {
+    method: 'POST',
+    token,
+    body,
+  });
+}
+
+export interface SearchMember {
+  id: string;
+  fullName: string;
+  cellNumber?: string;
+  role?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+export function searchMembers(token: string, query: string) {
+  return apiRequest<{ members: SearchMember[] }>(
+    `/members/search?q=${encodeURIComponent(query)}`,
+    { token },
+  );
+}
+
+export function fetchMember(token: string) {
+  return apiRequest<{ member: SearchMember }>('/members/me', { token });
+}
+
 export interface GroupMember {
   id: string;
   fullName: string;

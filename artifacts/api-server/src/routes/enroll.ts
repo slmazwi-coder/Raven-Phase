@@ -228,13 +228,18 @@ router.post("/enroll/verify-otp", async (req, res): Promise<void> => {
         .returning()
     )[0];
 
-  const token = signToken({ sub: member.id, role: member.role });
+  const token = signToken({
+    sub: member.id,
+    role: member.role,
+    fullName: member.fullName,
+  });
 
   res.json({
     ok: true,
     token,
     member: {
       id: member.id,
+      fullName: member.fullName,
       cellNumber: member.cellNumber,
       role: member.role,
       status: member.status,
