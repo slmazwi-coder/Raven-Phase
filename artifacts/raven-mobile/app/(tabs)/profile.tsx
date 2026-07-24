@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import colors from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
@@ -84,18 +85,25 @@ export default function ProfileScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.6,
-      base64: true,
+      quality: 0.9,
+      base64: false,
     });
 
-    if (result.canceled || !result.assets?.[0]?.base64) return;
+    if (result.canceled || !result.assets?.[0]?.uri) return;
 
     const asset = result.assets[0];
-    const mime = asset.mimeType ?? 'image/jpeg';
-    const dataUri = `data:${mime};base64,${asset.base64}`;
-
     setSaving(true);
     try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 512 } }],
+        { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      if (!manipulated.base64) {
+        Alert.alert('Could not process image');
+        return;
+      }
+      const dataUri = `data:image/jpeg;base64,${manipulated.base64}`;
       await updateMutation.mutateAsync({ avatar: dataUri });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
 import type { ChatMessage } from './api';
 
 export type WsMessage = ChatMessage;
@@ -10,25 +9,29 @@ interface TypingUser {
   until: number;
 }
 
-interface PresenceState {
-  memberId: string;
-  online: boolean;
-}
-
-export function useGroupChat(groupId: string | null, token: string | null) {
+export function useGroupChat(
+  groupId: string | null,
+  token: string | null,
+  options?: { markRead?: () => void },
+) {
   const [messages, setMessages] = useState<WsMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [presence, setPresence] = useState<Record<string, boolean>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markReadRef = useRef(options?.markRead);
+  markReadRef.current = options?.markRead;
 
   useEffect(() => {
     if (!token || !groupId) return;
 
-    const domain = process.env.EXPO_PUBLIC_WS_DOMAIN || process.env.EXPO_PUBLIC_DOMAIN;
+    const domain =
+      process.env.EXPO_PUBLIC_WS_DOMAIN || process.env.EXPO_PUBLIC_DOMAIN;
     if (!domain) {
-      console.warn('[ws] EXPO_PUBLIC_WS_DOMAIN / EXPO_PUBLIC_DOMAIN not set — WebSocket disabled');
+      console.warn(
+        '[ws] EXPO_PUBLIC_WS_DOMAIN / EXPO_PUBLIC_DOMAIN not set — WebSocket disabled',
+      );
       return;
     }
 
@@ -76,6 +79,17 @@ export function useGroupChat(groupId: string | null, token: string | null) {
           });
         } else if (msg.type === 'presence') {
           setPresence((prev) => ({ ...prev, [msg.memberId]: msg.online }));
+        } else if (msg.type === 'read' && msg.groupId === groupId) {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (msg.messageIds?.includes(m.id)) {
+                const set = new Set(m.readBy ?? []);
+                set.add(msg.memberId);
+                return { ...m, readBy: Array.from(set) };
+              }
+              return m;
+            }),
+          );
         }
       } catch {
         // ignore malformed frames
@@ -132,6 +146,21 @@ export function useGroupChat(groupId: string | null, token: string | null) {
     });
   }, []);
 
+  const markMessageRead = useCallback((messageId: string) => {
+    // Read receipts are batched through the markRead callback
+    markReadRef.current?.();
+  }, []);
+
+  const updateMessage = useCallback(
+    (message: WsMessage) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === message.id)) return prev;
+        return [message, ...prev];
+      });
+    },
+    [setMessages],
+  );
+
   return {
     messages,
     isConnected,
@@ -141,5 +170,7 @@ export function useGroupChat(groupId: string | null, token: string | null) {
     sendTyping,
     notifyTyping,
     prependHistory,
+    markMessageRead,
+    updateMessage,
   };
 }

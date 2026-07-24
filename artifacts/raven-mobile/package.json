@@ -55,10 +55,16 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@workspace/raven-security": "workspace:*",
     "expo": "~54.0.27",
+    "expo-application": "~7.0.8",
+    "expo-av": "~16.0.8",
+    "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~19.0.23",
+    "expo-image-manipulator": "~14.0.8",
+    "expo-notifications": "~0.32.17",
     "expo-secure-store": "~15.0.8",
     "react": "catalog:",
-    "react-native": "0.81.5",
-    "@workspace/raven-security": "workspace:*"
+    "react-native": "0.81.5"
   }
 }

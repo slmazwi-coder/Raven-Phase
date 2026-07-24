@@ -132,6 +132,8 @@ export function registerDevice(
 export interface Group {
   id: string;
   name: string;
+  isDirect?: boolean;
+  readReceiptsEnabled?: boolean;
   createdAt: string;
   roleInGroup: string;
   joinedAt: string;
@@ -214,7 +216,13 @@ export interface ChatMessage {
   senderName: string;
   senderAvatar?: string | null;
   content: string;
-  contentType: string;
+  contentType: 'text' | 'image' | 'audio' | 'document';
+  mediaUrl?: string | null;
+  mediaName?: string | null;
+  mediaMime?: string | null;
+  mediaSize?: number | null;
+  deliveredAt?: string | null;
+  readBy?: string[];
   createdAt: string;
 }
 
@@ -224,6 +232,51 @@ export function fetchMessages(groupId: string, token: string, before?: string) {
     `/groups/${groupId}/messages${query}`,
     { token },
   );
+}
+
+export function createDirectGroup(token: string, memberId: string) {
+  return apiRequest<{ group: Group }>('/groups/direct', {
+    method: 'POST',
+    token,
+    body: { member_id: memberId },
+  });
+}
+
+export function sendMediaMessage(
+  groupId: string,
+  token: string,
+  body: {
+    content?: string;
+    content_type: 'text' | 'image' | 'audio' | 'document';
+    media_url?: string;
+    media_name?: string;
+    media_mime?: string;
+    media_size?: number;
+  },
+) {
+  return apiRequest<{ message: ChatMessage }>(`/groups/${groupId}/messages`, {
+    method: 'POST',
+    token,
+    body,
+  });
+}
+
+export function markGroupAsRead(groupId: string, token: string) {
+  return apiRequest<{ read: boolean; count?: number }>(`/groups/${groupId}/read`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function registerPushToken(
+  token: string,
+  body: { device_identifier: string; platform: 'ios' | 'android'; push_token: string },
+) {
+  return apiRequest<{ device: unknown }>('/devices/push-token', {
+    method: 'POST',
+    token,
+    body,
+  });
 }
 
 // ─── Security / Incidents ───────────────────────────────────────────────────

@@ -1,73 +1,27 @@
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 import type { Server } from "http";
 import { verifyToken } from "./auth";
 import { db } from "@workspace/db";
 import {
   groupMembersTable,
+  groupsTable,
   membersTable,
   messagesTable,
 } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "./logger";
-
-interface AuthedSocket extends WebSocket {
-  memberId?: string;
-  typingTimeouts?: Map<string, NodeJS.Timeout>;
-}
-
-/** memberId → all connected sockets for that member */
-const clientsByMember = new Map<string, Set<AuthedSocket>>();
-
-async function getGroupMemberIds(groupId: string): Promise<string[]> {
-  const rows = await db
-    .select({ memberId: groupMembersTable.memberId })
-    .from(groupMembersTable)
-    .where(eq(groupMembersTable.groupId, groupId));
-  return rows.map((r) => r.memberId);
-}
-
-async function getMemberGroups(memberId: string): Promise<string[]> {
-  const rows = await db
-    .select({ groupId: groupMembersTable.groupId })
-    .from(groupMembersTable)
-    .where(eq(groupMembersTable.memberId, memberId));
-  return rows.map((r) => r.groupId);
-}
-
-function sendToMember(memberId: string, payload: object) {
-  const sockets = clientsByMember.get(memberId);
-  if (!sockets) return;
-  const message = JSON.stringify(payload);
-  for (const sock of sockets) {
-    if (sock.readyState === WebSocket.OPEN) {
-      sock.send(message);
-    }
-  }
-}
-
-async function broadcastToGroup(
-  groupId: string,
-  payload: object,
-  excludeMemberId?: string,
-) {
-  const memberIds = await getGroupMemberIds(groupId);
-  const message = JSON.stringify(payload);
-  for (const memberId of memberIds) {
-    if (excludeMemberId && memberId === excludeMemberId) continue;
-    const sockets = clientsByMember.get(memberId);
-    if (!sockets) continue;
-    for (const sock of sockets) {
-      if (sock.readyState === WebSocket.OPEN) {
-        sock.send(message);
-      }
-    }
-  }
-}
+import {
+  broadcastToGroup,
+  clientsByMember,
+  getGroupMemberIds,
+  getMemberGroups,
+  type ClientSocket,
+} from "./ws-broadcast";
 
 export function createWsServer(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
-  wss.on("connection", async (ws: AuthedSocket, req) => {
+  wss.on("connection", async (ws: ClientSocket, req) => {
     // Authenticate via ?token= query param (WS handshake headers can't carry Authorization)
     const url = new URL(req.url ?? "/", "http://localhost");
     const token = url.searchParams.get("token");
@@ -161,23 +115,29 @@ export function createWsServer(server: Server): WebSocketServer {
           return;
         }
 
-        if (msg.type !== "send_message" || !msg.content?.trim()) {
+        if (msg.type !== "send_message") {
           return;
         }
 
-        // Resolve sender display name
+        const trimmedContent = msg.content?.trim() ?? "";
+        // Allow empty content for media messages, but require a media url; otherwise need text
+        if (!trimmedContent) {
+          return;
+        }
+
+        // Resolve sender display name and avatar
         const [sender] = await db
           .select({ fullName: membersTable.fullName, avatar: membersTable.avatar })
           .from(membersTable)
           .where(eq(membersTable.id, memberId));
 
-        // Persist message and mark as delivered immediately (Phase 2)
+        // Persist message and mark as delivered immediately
         const [saved] = await db
           .insert(messagesTable)
           .values({
             groupId,
             senderId: memberId,
-            content: msg.content.trim(),
+            content: trimmedContent,
             contentType: "text",
             deliveredAt: new Date(),
           })
@@ -194,6 +154,26 @@ export function createWsServer(server: Server): WebSocketServer {
           contentType: saved.contentType,
           createdAt: saved.createdAt,
         });
+
+        // Push notifications to other members who are not actively connected
+        try {
+          const memberIds = await getGroupMemberIds(groupId);
+          const recipients = memberIds.filter((id) => id !== memberId);
+          const [group] = await db
+            .select({ isDirect: groupsTable.isDirect })
+            .from(groupsTable)
+            .where(eq(groupsTable.id, groupId));
+          const { sendNewMessagePush } = await import("../lib/push");
+          await sendNewMessagePush(
+            groupId,
+            memberId,
+            recipients,
+            saved.content,
+            group?.isDirect,
+          );
+        } catch (err) {
+          logger.warn({ err }, "Failed to send push notifications");
+        }
       } catch (err) {
         logger.error({ err }, "WS message handler error");
       }

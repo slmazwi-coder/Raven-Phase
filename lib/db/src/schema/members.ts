@@ -1,4 +1,11 @@
-import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -20,6 +27,10 @@ export const membersTable = pgTable("members", {
   cellNumber: text("cell_number").unique().notNull(),
   email: text("email"),
   avatar: text("avatar"),
+  /** Whether the member's online/last-seen status is visible to others */
+  lastSeenEnabled: boolean("last_seen_enabled").notNull().default(true),
+  /** Whether read receipts are sent for this member */
+  readReceiptsEnabled: boolean("read_receipts_enabled").notNull().default(true),
   role: memberRoleEnum("role").notNull().default("member"),
   status: memberStatusEnum("status").notNull().default("active"),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),

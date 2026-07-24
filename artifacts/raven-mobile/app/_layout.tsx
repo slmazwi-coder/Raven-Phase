@@ -15,6 +15,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { SecurityProvider } from '@/context/SecurityContext';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import colors from '@/constants/colors';
 
 SplashScreen.preventAutoHideAsync();
@@ -43,6 +44,8 @@ function AuthGate() {
 }
 
 function RootLayoutNav() {
+  usePushNotifications();
+
   return (
     <>
       <AuthGate />
@@ -58,6 +61,8 @@ function RootLayoutNav() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="group/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="group/create" options={{ headerShown: false }} />
+        <Stack.Screen name="group/new-dm" options={{ headerShown: false }} />
       </Stack>
     </>
   );

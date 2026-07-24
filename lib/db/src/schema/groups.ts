@@ -1,4 +1,5 @@
 import {
+  boolean,
   pgEnum,
   pgTable,
   primaryKey,
@@ -26,12 +27,16 @@ export const groupPolicyEnum = pgEnum("group_policy", [
 export const groupsTable = pgTable("groups", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  /** True for implicit 1:1 direct-message groups */
+  isDirect: boolean("is_direct").notNull().default(false),
   screenshotPolicy: groupPolicyEnum("screenshot_policy")
     .notNull()
     .default("warn"),
   screenRecordingPolicy: groupPolicyEnum("screen_recording_policy")
     .notNull()
     .default("warn"),
+  /** Whether read receipts are generated in this group */
+  readReceiptsEnabled: boolean("read_receipts_enabled").notNull().default(true),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => membersTable.id),

@@ -15,6 +15,8 @@ export const devicesTable = pgTable("devices", {
   deviceIdentifier: text("device_identifier").notNull(),
   /** Raw attestation token from App Attest / Play Integrity */
   attestation: text("attestation"),
+  /** Expo push notification token for this device */
+  pushToken: text("push_token"),
   /**
    * Task 4 — Encryption groundwork:
    * Placeholder for Signal Protocol X3DH identity public key (IK_pub).

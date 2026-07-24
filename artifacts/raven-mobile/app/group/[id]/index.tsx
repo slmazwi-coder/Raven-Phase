@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -13,14 +15,21 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { Audio } from 'expo-av';
 import colors from '@/constants/colors';
 import {
   fetchMessages,
   fetchGroupMembers,
   fetchGroup,
+  sendMediaMessage,
+  markGroupAsRead,
   type ChatMessage,
 } from '@/lib/api';
 import { useGroupChat } from '@/lib/ws';
@@ -28,18 +37,139 @@ import { useAuth } from '@/context/AuthContext';
 import { useSecurity } from '@/context/SecurityContext';
 
 const C = colors.light;
+const MAX_MEDIA_BYTES = 3 * 1024 * 1024; // 3 MB cap for data-uri storage
 
 interface BubbleProps {
   msg: ChatMessage;
   isMine: boolean;
   showSender: boolean;
+  memberCount: number;
+  otherMembers: { id: string }[];
 }
 
-function Bubble({ msg, isMine, showSender }: BubbleProps) {
+function formatBytes(bytes?: number | null) {
+  if (bytes == null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function MessageStatus({ msg, isMine, memberCount, otherMembers }: BubbleProps) {
+  if (!isMine) return null;
+
+  const otherIds = otherMembers.map((m) => m.id);
+  const readByOthers = (msg.readBy ?? []).filter((id) => id !== msg.senderId);
+  const readCount = readByOthers.length;
+  const allRead = memberCount > 1 && readCount >= otherIds.length;
+
+  let icon: React.ComponentProps<typeof Feather>['name'] = 'check';
+  if (allRead) icon = 'check-circle';
+  else if (msg.deliveredAt) icon = 'check';
+
+  const color = allRead ? C.primary : 'rgba(255,255,255,0.65)';
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 4 }}>
+      <Feather name={icon} size={10} color={color} />
+    </View>
+  );
+}
+
+function MediaBubble({
+  msg,
+  isMine,
+}: {
+  msg: ChatMessage;
+  isMine: boolean;
+}) {
+  const uri = msg.mediaUrl ?? '';
+
+  if (msg.contentType === 'image') {
+    return (
+      <Pressable onPress={() => Linking.openURL(uri).catch(() => {})}>
+        <Image source={{ uri }} style={styles.mediaImage} resizeMode="cover" />
+      </Pressable>
+    );
+  }
+
+  if (msg.contentType === 'audio') {
+    return <VoiceNotePlayer uri={uri} isMine={isMine} />;
+  }
+
+  return (
+    <Pressable
+      onPress={() => Linking.openURL(uri).catch(() => {})}
+      style={styles.documentRow}
+    >
+      <Feather name="file-text" size={28} color={isMine ? '#fff' : C.primary} />
+      <View style={styles.documentInfo}>
+        <Text
+          style={[styles.documentName, isMine && styles.documentNameMine]}
+          numberOfLines={1}
+        >
+          {msg.mediaName || 'Document'}
+        </Text>
+        <Text style={[styles.documentMeta, isMine && styles.documentMetaMine]}>
+          {formatBytes(msg.mediaSize)}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function VoiceNotePlayer({ uri, isMine }: { uri: string; isMine: boolean }) {
+  const [playing, setPlaying] = useState(false);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  async function toggle() {
+    if (!uri) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      if (!soundRef.current) {
+        const { sound } = await Audio.Sound.createAsync({ uri });
+        soundRef.current = sound;
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (!status.isLoaded) return;
+          setPlaying(status.isPlaying);
+          if (status.didJustFinish) {
+            setPlaying(false);
+            soundRef.current?.setPositionAsync(0);
+          }
+        });
+        await sound.playAsync();
+      } else {
+        const status = await soundRef.current.getStatusAsync();
+        if (status.isLoaded && status.isPlaying) {
+          await soundRef.current.pauseAsync();
+        } else {
+          await soundRef.current.playAsync();
+        }
+      }
+    } catch (e) {
+      console.warn('Voice playback error', e);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync();
+    };
+  }, []);
+
+  return (
+    <Pressable onPress={toggle} style={styles.voiceRow}>
+      <Feather name={playing ? 'pause' : 'play'} size={22} color={isMine ? '#fff' : C.primary} />
+      <Text style={[styles.voiceText, isMine && styles.voiceTextMine]}>Voice note</Text>
+    </Pressable>
+  );
+}
+
+function Bubble({ msg, isMine, showSender, memberCount, otherMembers }: BubbleProps) {
   const time = new Date(msg.createdAt).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
+  const hasMedia = msg.contentType !== 'text' && msg.mediaUrl;
 
   return (
     <View style={[styles.bubbleRow, isMine && styles.bubbleRowMine]}>
@@ -52,17 +182,29 @@ function Bubble({ msg, isMine, showSender }: BubbleProps) {
         {showSender && !isMine ? (
           <Text style={styles.senderName}>{msg.senderName}</Text>
         ) : null}
-        <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>
-          {msg.content}
-        </Text>
-        <Text
-          style={[
-            styles.bubbleTime,
-            isMine ? styles.bubbleTimeMine : styles.bubbleTimeOther,
-          ]}
-        >
-          {time}
-        </Text>
+        {hasMedia ? <MediaBubble msg={msg} isMine={isMine} /> : null}
+        {msg.content ? (
+          <Text style={[styles.bubbleText, isMine && styles.bubbleTextMine]}>
+            {msg.content}
+          </Text>
+        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end' }}>
+          <Text
+            style={[
+              styles.bubbleTime,
+              isMine ? styles.bubbleTimeMine : styles.bubbleTimeOther,
+            ]}
+          >
+            {time}
+          </Text>
+          <MessageStatus
+            msg={msg}
+            isMine={isMine}
+            memberCount={memberCount}
+            otherMembers={otherMembers}
+            showSender={showSender}
+          />
+        </View>
       </View>
     </View>
   );
@@ -76,56 +218,59 @@ export default function ChatScreen() {
   const { setActiveGroupId, lastEnforcement, clearLastEnforcement } = useSecurity();
 
   const [inputText, setInputText] = useState('');
+  const [showAttachments, setShowAttachments] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [sendingMedia, setSendingMedia] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
 
-  // Register this chat as the active group for screenshot/recording reporting
   useEffect(() => {
     setActiveGroupId(groupId ?? null);
     return () => setActiveGroupId(null);
   }, [groupId, setActiveGroupId]);
 
-  // React to enforcement actions returned by /incidents/report
   useEffect(() => {
     if (!lastEnforcement) return;
-
     const messages: Record<string, string> = {
       warn: 'Screenshot/recording detected. This incident has been logged.',
       mute: `You have been muted until ${lastEnforcement.mutedUntil ? new Date(lastEnforcement.mutedUntil).toLocaleString() : 'the expiry time'}`,
       remove: 'You have been removed from this group.',
       ban: 'You have been banned from Raven.',
     };
-
     Alert.alert('Security policy enforced', messages[lastEnforcement.action] ?? 'A security policy was enforced.');
-
     if (lastEnforcement.action === 'remove' || lastEnforcement.action === 'ban') {
       router.replace('/(tabs)');
     }
-
     clearLastEnforcement();
   }, [lastEnforcement, clearLastEnforcement, router]);
 
-  // Load group detail
   const { data: groupData } = useQuery({
     queryKey: ['group', groupId, token],
     queryFn: () => fetchGroup(groupId!, token!),
     enabled: !!groupId && !!token,
   });
 
-  // Load group members
   const { data: membersData } = useQuery({
     queryKey: ['group-members', groupId, token],
     queryFn: () => fetchGroupMembers(groupId!, token!),
     enabled: !!groupId && !!token,
   });
 
-  // Load message history
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['messages', groupId, token],
     queryFn: () => fetchMessages(groupId!, token!),
     enabled: !!groupId && !!token,
   });
 
-  // Real-time WebSocket
+  const readMutation = useMutation({
+    mutationFn: () => markGroupAsRead(groupId!, token!),
+  });
+
+  const markRead = useCallback(() => {
+    if (!groupData?.group.readReceiptsEnabled) return;
+    readMutation.mutate();
+  }, [groupData?.group.readReceiptsEnabled, readMutation]);
+
   const {
     messages: wsMessages,
     sendMessage,
@@ -135,23 +280,30 @@ export default function ChatScreen() {
     notifyTyping,
     presence,
     isConnected,
-  } = useGroupChat(groupId ?? null, token);
+  } = useGroupChat(groupId ?? null, token, { markRead });
 
-  // Merge history into WS state once loaded
-  const historyMergedRef = useRef(false);
   useEffect(() => {
-    if (historyData?.messages && !historyMergedRef.current) {
-      historyMergedRef.current = true;
-      // History is ascending; we want descending for inverted FlatList
+    if (historyData?.messages && !historyLoadedRef.current) {
+      historyLoadedRef.current = true;
       prependHistory([...historyData.messages].reverse());
+      markRead();
     }
-  }, [historyData, prependHistory]);
+  }, [historyData, prependHistory, markRead]);
+
+  const historyLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const last = wsMessages[0];
+    if (last && last.senderId !== member?.id) {
+      markRead();
+    }
+  }, [wsMessages, member?.id, markRead]);
 
   const groupName = groupData?.group.name ?? 'Group';
+  const isDirect = groupData?.group.isDirect ?? false;
   const members = membersData?.members ?? [];
   const memberCount = members.length;
   const otherMembers = members.filter((m) => m.id !== member?.id);
-  const isDirect = memberCount === 2 && otherMembers.length === 1;
 
   function lastSeenText(date?: string | null) {
     if (!date) return 'offline';
@@ -194,12 +346,173 @@ export default function ChatScreen() {
     [notifyTyping],
   );
 
+  async function uploadMedia(
+    contentType: 'image' | 'audio' | 'document',
+    uri: string,
+    name?: string,
+    mime?: string,
+    size?: number,
+  ) {
+    if (!token || !groupId) return;
+    if (size && size > MAX_MEDIA_BYTES) {
+      Alert.alert('File too large', 'This file is over the 3 MB cap. Try a smaller file.');
+      return;
+    }
+
+    setSendingMedia(true);
+    try {
+      let base64: string | undefined;
+      if (uri.startsWith('data:')) {
+        base64 = uri.split(',')[1];
+      } else {
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists) {
+          Alert.alert('File not found');
+          return;
+        }
+        if (info.size && info.size > MAX_MEDIA_BYTES) {
+          Alert.alert('File too large', 'This file is over the 3 MB cap. Try a smaller file.');
+          return;
+        }
+        base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      }
+      if (!base64) {
+        Alert.alert('Could not read file');
+        return;
+      }
+
+      const dataUri = uri.startsWith('data:')
+        ? uri
+        : `data:${mime || 'application/octet-stream'};base64,${base64}`;
+
+      const caption = inputText.trim();
+      await sendMediaMessage(groupId, token, {
+        content: caption,
+        content_type: contentType,
+        media_url: dataUri,
+        media_name: name || (contentType === 'audio' ? 'Voice note' : 'Document'),
+        media_mime: mime,
+        media_size: size,
+      });
+      setInputText('');
+    } catch (e: any) {
+      Alert.alert('Send failed', e?.message ?? 'Could not send media');
+    } finally {
+      setSendingMedia(false);
+    }
+  }
+
+  async function pickImage(source: 'library' | 'camera') {
+    const { status } =
+      source === 'library'
+        ? await ImagePicker.requestMediaLibraryPermissionsAsync()
+        : await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed');
+      return;
+    }
+
+    const result =
+      source === 'library'
+        ? await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.9,
+            base64: false,
+          })
+        : await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.9,
+            base64: false,
+          });
+
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const asset = result.assets[0];
+    setSendingMedia(true);
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      if (!manipulated.base64) {
+        Alert.alert('Could not compress image');
+        return;
+      }
+      const size = manipulated.base64.length * 0.75; // approximate
+      await uploadMedia(
+        'image',
+        `data:image/jpeg;base64,${manipulated.base64}`,
+        asset.fileName || 'image.jpg',
+        'image/jpeg',
+        size,
+      );
+    } catch (e: any) {
+      Alert.alert('Image failed', e?.message ?? 'Could not send image');
+    } finally {
+      setSendingMedia(false);
+    }
+  }
+
+  async function pickDocument() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: '*/*',
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    await uploadMedia(
+      'document',
+      asset.uri,
+      asset.name,
+      asset.mimeType,
+      asset.size ?? undefined,
+    );
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      try {
+        await recordingRef.current?.stopAndUnloadAsync();
+        const uri = recordingRef.current?.getURI();
+        recordingRef.current = null;
+        setRecording(false);
+        if (uri) {
+          const info = await FileSystem.getInfoAsync(uri);
+          await uploadMedia('audio', uri, 'Voice note', 'audio/m4a', info.exists ? info.size : undefined);
+        }
+      } catch (e) {
+        console.warn('Recording stop error', e);
+      }
+      return;
+    }
+
+    const { status } = await Audio.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Microphone permission needed');
+      return;
+    }
+
+    try {
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      );
+      recordingRef.current = recording;
+      setRecording(true);
+    } catch (e) {
+      Alert.alert('Could not start recording');
+    }
+  }
+
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color={C.text} />
@@ -231,7 +544,6 @@ export default function ChatScreen() {
         </Pressable>
       </View>
 
-      {/* Messages */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior="padding"
@@ -252,7 +564,13 @@ export default function ChatScreen() {
               const showSender =
                 !isMine && (!prevMsg || prevMsg.senderId !== item.senderId);
               return (
-                <Bubble msg={item} isMine={isMine} showSender={showSender} />
+                <Bubble
+                  msg={item}
+                  isMine={isMine}
+                  showSender={showSender}
+                  memberCount={memberCount}
+                  otherMembers={otherMembers}
+                />
               );
             }}
             scrollEnabled={!!wsMessages.length}
@@ -261,11 +579,7 @@ export default function ChatScreen() {
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={() => (
               <View style={styles.emptyChat}>
-                <Feather
-                  name="message-circle"
-                  size={44}
-                  color={C.textTertiary}
-                />
+                <Feather name="message-circle" size={44} color={C.textTertiary} />
                 <Text style={styles.emptyChatText}>No messages yet</Text>
                 <Text style={styles.emptyChatSub}>Be the first to say hi.</Text>
               </View>
@@ -273,15 +587,42 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* Input bar */}
-        <View
-          style={[styles.inputBar, { paddingBottom: bottomPadding + 8 }]}
-        >
+        {showAttachments ? (
+          <View style={styles.attachmentBar}>
+            <AttachmentButton
+              icon="image"
+              label="Photo"
+              onPress={() => pickImage('library')}
+            />
+            <AttachmentButton
+              icon="camera"
+              label="Camera"
+              onPress={() => pickImage('camera')}
+            />
+            <AttachmentButton
+              icon="file-text"
+              label="Document"
+              onPress={pickDocument}
+            />
+          </View>
+        ) : null}
+
+        <View style={[styles.inputBar, { paddingBottom: bottomPadding + 8 }]}>
           {typingText ? (
             <View style={styles.typingBar}>
               <Text style={styles.typingText}>{typingText}</Text>
             </View>
           ) : null}
+          <Pressable
+            onPress={() => setShowAttachments((s) => !s)}
+            style={styles.attachBtn}
+          >
+            <Feather
+              name={showAttachments ? 'x' : 'paperclip'}
+              size={22}
+              color={C.textSecondary}
+            />
+          </Pressable>
           <TextInput
             ref={inputRef}
             style={styles.textInput}
@@ -294,15 +635,30 @@ export default function ChatScreen() {
             returnKeyType="default"
           />
           <Pressable
-            onPress={handleSend}
-            disabled={!inputText.trim()}
+            onPress={toggleRecording}
+            disabled={sendingMedia}
             style={({ pressed }) => [
-              styles.sendBtn,
-              !inputText.trim() && styles.sendBtnDisabled,
+              styles.micBtn,
+              recording && styles.micBtnRecording,
               pressed && styles.sendBtnPressed,
             ]}
           >
-            <Feather name="send" size={18} color="#fff" />
+            <Feather name={recording ? 'square' : 'mic'} size={20} color="#fff" />
+          </Pressable>
+          <Pressable
+            onPress={handleSend}
+            disabled={!inputText.trim() || sendingMedia}
+            style={({ pressed }) => [
+              styles.sendBtn,
+              (!inputText.trim() || sendingMedia) && styles.sendBtnDisabled,
+              pressed && styles.sendBtnPressed,
+            ]}
+          >
+            {sendingMedia ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Feather name="send" size={18} color="#fff" />
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -310,9 +666,27 @@ export default function ChatScreen() {
   );
 }
 
+function AttachmentButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.attachmentBtn}>
+      <View style={styles.attachmentIcon}>
+        <Feather name={icon} size={22} color="#fff" />
+      </View>
+      <Text style={styles.attachmentLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
-
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -401,6 +775,44 @@ const styles = StyleSheet.create({
   bubbleTimeMine: { color: 'rgba(255,255,255,0.65)' },
   bubbleTimeOther: { color: C.textTertiary },
 
+  mediaImage: {
+    width: 220,
+    height: 160,
+    borderRadius: 12,
+    marginVertical: 4,
+  },
+  voiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  voiceText: {
+    fontSize: 15,
+    fontFamily: 'Inter_500Medium',
+    color: C.text,
+  },
+  voiceTextMine: { color: '#fff' },
+  documentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  documentInfo: { flexShrink: 1 },
+  documentName: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    color: C.text,
+  },
+  documentNameMine: { color: '#fff' },
+  documentMeta: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    color: C.textSecondary,
+  },
+  documentMetaMine: { color: 'rgba(255,255,255,0.7)' },
+
   emptyChat: {
     flex: 1,
     alignItems: 'center',
@@ -417,6 +829,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
     color: C.textTertiary,
+  },
+
+  attachmentBar: {
+    flexDirection: 'row',
+    gap: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  attachmentBtn: { alignItems: 'center', gap: 6 },
+  attachmentIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: C.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    color: C.textSecondary,
   },
 
   typingBar: {
@@ -438,7 +873,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: C.border,
     backgroundColor: C.background,
-    gap: 10,
+    gap: 8,
+  },
+  attachBtn: {
+    width: 40,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   textInput: {
     flex: 1,
@@ -454,6 +895,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 15,
   },
+  micBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: C.textTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micBtnRecording: { backgroundColor: C.accent },
   sendBtn: {
     width: 44,
     height: 44,

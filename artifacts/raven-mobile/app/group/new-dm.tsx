@@ -14,7 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
-import { createGroup, searchMembers, type SearchMember } from '@/lib/api';
+import { createDirectGroup, searchMembers, type SearchMember } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const C = colors.light;
@@ -65,10 +65,7 @@ export default function NewDirectChatScreen() {
 
     setCreating(true);
     try {
-      const res = await createGroup(token, {
-        name: result.fullName,
-        member_ids: [result.id],
-      });
+      const res = await createDirectGroup(token, result.id);
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       router.replace(`/group/${res.group.id}`);
     } catch (e: any) {
