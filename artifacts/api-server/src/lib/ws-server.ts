@@ -53,7 +53,7 @@ export function createWsServer(server: Server): WebSocketServer {
     try {
       await db
         .update(membersTable)
-        .set({ lastSeenAt: new Date() })
+        .set({ isOnline: true, lastSeenAt: new Date() })
         .where(eq(membersTable.id, auth.sub));
 
       const groupIds = await getMemberGroups(auth.sub);
@@ -192,7 +192,7 @@ export function createWsServer(server: Server): WebSocketServer {
           try {
             await db
               .update(membersTable)
-              .set({ lastSeenAt: new Date() })
+              .set({ isOnline: false, lastSeenAt: new Date() })
               .where(eq(membersTable.id, memberId));
             const groupIds = await getMemberGroups(memberId);
             for (const groupId of groupIds) {

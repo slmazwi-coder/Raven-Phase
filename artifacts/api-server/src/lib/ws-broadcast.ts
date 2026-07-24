@@ -70,12 +70,3 @@ export async function sendReadReceipt(
     messageIds,
   });
 }
-
-export function isMemberOnline(memberId: string): boolean {
-  const sockets = clientsByMember.get(memberId);
-  if (!sockets) return false;
-  for (const sock of sockets) {
-    if (sock.readyState === WebSocket.OPEN) return true;
-  }
-  return false;
-}

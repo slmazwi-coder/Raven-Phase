@@ -33,6 +33,7 @@ export const membersTable = pgTable("members", {
   readReceiptsEnabled: boolean("read_receipts_enabled").notNull().default(true),
   role: memberRoleEnum("role").notNull().default("member"),
   status: memberStatusEnum("status").notNull().default("active"),
+  isOnline: boolean("is_online").notNull().default(false),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

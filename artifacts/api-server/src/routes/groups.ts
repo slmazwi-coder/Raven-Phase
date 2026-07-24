@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../middleware/requireAuth";
 import { logger } from "../lib/logger";
-import { getGroupMemberIds, isMemberOnline } from "../lib/ws-broadcast";
+import { getGroupMemberIds } from "../lib/ws-broadcast";
 
 const router: IRouter = Router();
 
@@ -335,6 +335,7 @@ router.get("/members/:id", async (req, res): Promise<void> => {
       cellNumber: membersTable.cellNumber,
       role: membersTable.role,
       status: membersTable.status,
+      isOnline: membersTable.isOnline,
       lastSeenAt: membersTable.lastSeenAt,
       lastSeenEnabled: membersTable.lastSeenEnabled,
       createdAt: membersTable.createdAt,
@@ -353,6 +354,12 @@ router.get("/members/:id", async (req, res): Promise<void> => {
   const showPhone = isSelf || isAdmin;
   const showPresence = isSelf || member.lastSeenEnabled;
 
+  // Derive online status from last seen so REST servers (which don't share
+  // WebSocket state with the Railway WS service) still report presence.
+  const isOnlineFromPresence =
+    member.lastSeenAt != null &&
+    Date.now() - new Date(member.lastSeenAt).getTime() < 2 * 60 * 1000;
+
   res.json({
     member: {
       id: member.id,
@@ -360,7 +367,7 @@ router.get("/members/:id", async (req, res): Promise<void> => {
       avatar: member.avatar,
       role: member.role,
       status: member.status,
-      isOnline: isMemberOnline(targetId),
+      isOnline: showPresence ? isOnlineFromPresence : null,
       lastSeenAt: showPresence ? member.lastSeenAt : null,
       cellNumber: showPhone ? member.cellNumber : undefined,
       createdAt: member.createdAt,
