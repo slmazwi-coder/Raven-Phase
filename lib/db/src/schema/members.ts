@@ -19,8 +19,10 @@ export const membersTable = pgTable("members", {
   fullName: text("full_name").notNull(),
   cellNumber: text("cell_number").unique().notNull(),
   email: text("email"),
+  avatar: text("avatar"),
   role: memberRoleEnum("role").notNull().default("member"),
   status: memberStatusEnum("status").notNull().default("active"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

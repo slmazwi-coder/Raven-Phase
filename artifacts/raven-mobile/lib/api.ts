@@ -160,9 +160,26 @@ export interface SearchMember {
   id: string;
   fullName: string;
   cellNumber?: string;
+  avatar?: string | null;
   role?: string;
   status?: string;
+  lastSeenAt?: string | null;
   createdAt?: string;
+}
+
+export function fetchMember(token: string) {
+  return apiRequest<{ member: SearchMember }>('/members/me', { token });
+}
+
+export function updateProfile(
+  token: string,
+  body: { full_name?: string; avatar?: string },
+) {
+  return apiRequest<{ member: SearchMember }>('/members/me', {
+    method: 'PATCH',
+    token,
+    body,
+  });
 }
 
 export function searchMembers(token: string, query: string) {
@@ -172,16 +189,14 @@ export function searchMembers(token: string, query: string) {
   );
 }
 
-export function fetchMember(token: string) {
-  return apiRequest<{ member: SearchMember }>('/members/me', { token });
-}
-
 export interface GroupMember {
   id: string;
   fullName: string;
   cellNumber?: string;
+  avatar?: string | null;
   role: string;
   status: string;
+  lastSeenAt?: string | null;
   roleInGroup: string;
   joinedAt: string;
 }
@@ -197,6 +212,7 @@ export interface ChatMessage {
   groupId: string;
   senderId: string;
   senderName: string;
+  senderAvatar?: string | null;
   content: string;
   contentType: string;
   createdAt: string;

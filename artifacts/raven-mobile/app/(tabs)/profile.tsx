@@ -1,21 +1,24 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useQuery } from '@tanstack/react-query';
+import * as ImagePicker from 'expo-image-picker';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import colors from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
-import { fetchMember } from '@/lib/api';
+import { fetchMember, updateProfile } from '@/lib/api';
 
 const C = colors.light;
 
@@ -28,6 +31,7 @@ const ROLE_COLORS: Record<string, string> = {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { member, token, logout } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['member', token],
@@ -36,6 +40,18 @@ export default function ProfileScreen() {
   });
 
   const profile = data?.member;
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(profile?.fullName ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const updateMutation = useMutation({
+    mutationFn: (body: { full_name?: string; avatar?: string }) =>
+      updateProfile(token!, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['member', token] });
+    },
+  });
+
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = insets.bottom;
 
@@ -57,39 +73,111 @@ export default function ProfileScreen() {
     );
   }
 
+  async function pickAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow access to photos to set a profile picture.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.6,
+      base64: true,
+    });
+
+    if (result.canceled || !result.assets?.[0]?.base64) return;
+
+    const asset = result.assets[0];
+    const mime = asset.mimeType ?? 'image/jpeg';
+    const dataUri = `data:${mime};base64,${asset.base64}`;
+
+    setSaving(true);
+    try {
+      await updateMutation.mutateAsync({ avatar: dataUri });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert('Upload failed', e?.message ?? 'Could not update avatar');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveName() {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) return;
+    setEditingName(false);
+    setSaving(true);
+    try {
+      await updateMutation.mutateAsync({ full_name: trimmed });
+    } catch (e: any) {
+      Alert.alert('Update failed', e?.message ?? 'Could not update name');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const roleColor = ROLE_COLORS[member?.role ?? 'member'] ?? C.textSecondary;
+  const displayName = profile?.fullName ?? member?.fullName ?? 'Raven User';
 
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingTop: topPadding },
-      ]}
-    >
-      {/* Header */}
+    <View style={[styles.container, { paddingTop: topPadding }]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile & Settings</Text>
       </View>
 
       <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingBottom: bottomPadding + 24 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: bottomPadding + 24 }]}
       >
         {/* Avatar */}
         <View style={styles.avatarSection}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarInitial}>
-              {(profile?.fullName ?? member?.fullName ?? 'U').charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          <Text style={styles.name} numberOfLines={1}>
-            {profile?.fullName ?? member?.fullName ?? 'Raven User'}
-          </Text>
+          <Pressable onPress={pickAvatar} disabled={saving} style={styles.avatarWrap}>
+            {profile?.avatar ? (
+              <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Text style={styles.avatarInitial}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.cameraBadge}>
+              <Feather name="camera" size={14} color="#fff" />
+            </View>
+          </Pressable>
+
+          {editingName ? (
+            <View style={styles.nameEditRow}>
+              <TextInput
+                style={styles.nameInput}
+                value={nameDraft}
+                onChangeText={setNameDraft}
+                onBlur={saveName}
+                onSubmitEditing={saveName}
+                autoFocus
+                selectTextOnFocus
+              />
+              <Pressable onPress={saveName} style={styles.nameSaveBtn}>
+                <Feather name="check" size={20} color={C.primary} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable onPress={() => { setEditingName(true); setNameDraft(displayName); }} style={styles.nameRow}>
+              <Text style={styles.name} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Feather name="edit-2" size={16} color={C.textTertiary} />
+            </Pressable>
+          )}
+
           {profile?.cellNumber ? (
             <Text style={styles.phone}>{profile.cellNumber}</Text>
           ) : null}
+
+          {saving ? <ActivityIndicator color={C.primary} style={{ marginTop: 8 }} /> : null}
+
           <View style={[styles.roleBadge, { backgroundColor: `${roleColor}22` }]}>
             <Text style={[styles.roleText, { color: roleColor }]}>
               {member?.role
@@ -98,10 +186,6 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
-
-        {isLoading ? (
-          <ActivityIndicator color={C.primary} style={{ marginVertical: 12 }} />
-        ) : null}
 
         {/* Account */}
         <View style={styles.section}>
@@ -123,17 +207,14 @@ export default function ProfileScreen() {
             <Divider />
             <PressableRow icon="help-circle" label="Help & Support" />
             <Divider />
-            <PressableRow icon="info" label="About Raven" last />
+            <PressableRow icon="info" label="About Raven" />
           </View>
         </View>
 
         {/* Sign out */}
         <Pressable
           onPress={handleLogout}
-          style={({ pressed }) => [
-            styles.signOutBtn,
-            pressed && styles.signOutBtnPressed,
-          ]}
+          style={({ pressed }) => [styles.signOutBtn, pressed && styles.signOutBtnPressed]}
         >
           <Feather name="log-out" size={18} color={C.accent} />
           <Text style={styles.signOutText}>Sign out</Text>
@@ -168,16 +249,12 @@ function Row({
 function PressableRow({
   icon,
   label,
-  last,
 }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   label: string;
-  last?: boolean;
 }) {
   return (
-    <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
+    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
       <Feather name={icon} size={18} color={C.textSecondary} />
       <Text style={styles.rowLabelFlex}>{label}</Text>
       <Feather name="chevron-right" size={18} color={C.textTertiary} />
@@ -213,26 +290,73 @@ const styles = StyleSheet.create({
     paddingVertical: 28,
     gap: 10,
   },
+  avatarWrap: {
+    position: 'relative',
+  },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: C.surface,
     borderWidth: 2,
     borderColor: C.border,
+  },
+  avatarPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitial: {
-    fontSize: 40,
+    fontSize: 48,
     fontFamily: 'Inter_700Bold',
     color: C.primary,
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: C.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: C.background,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
   },
   name: {
     fontSize: 20,
     fontFamily: 'Inter_700Bold',
     color: C.text,
-    maxWidth: '80%',
+    maxWidth: '70%',
+  },
+  nameEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  nameInput: {
+    minWidth: 180,
+    maxWidth: 240,
+    height: 44,
+    backgroundColor: C.surface,
+    borderRadius: C.radius,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+    color: C.text,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 18,
+    textAlign: 'center',
+  },
+  nameSaveBtn: {
+    padding: 6,
   },
   phone: {
     fontSize: 14,

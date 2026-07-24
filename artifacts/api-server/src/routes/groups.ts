@@ -146,8 +146,10 @@ router.get("/members/me", async (req, res): Promise<void> => {
       id: membersTable.id,
       fullName: membersTable.fullName,
       cellNumber: membersTable.cellNumber,
+      avatar: membersTable.avatar,
       role: membersTable.role,
       status: membersTable.status,
+      lastSeenAt: membersTable.lastSeenAt,
       createdAt: membersTable.createdAt,
     })
     .from(membersTable)
@@ -159,6 +161,47 @@ router.get("/members/me", async (req, res): Promise<void> => {
   }
 
   res.json({ member });
+});
+
+// PATCH /api/members/me — update own profile (name/avatar)
+router.patch("/members/me", async (req, res): Promise<void> => {
+  const memberId = req.auth!.sub;
+  const { full_name: fullName, avatar } = req.body as {
+    full_name?: string;
+    avatar?: string;
+  };
+
+  const updates: Partial<{
+    fullName: string;
+    avatar: string | null;
+    updatedAt: Date;
+  }> = { updatedAt: new Date() };
+
+  if (fullName !== undefined) {
+    const trimmed = fullName.trim();
+    if (!trimmed) {
+      res.status(400).json({ error: "full_name cannot be empty" });
+      return;
+    }
+    updates.fullName = trimmed;
+  }
+
+  if (avatar !== undefined) {
+    updates.avatar = avatar.trim() || null;
+  }
+
+  const [updated] = await db
+    .update(membersTable)
+    .set(updates)
+    .where(eq(membersTable.id, memberId))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Member not found" });
+    return;
+  }
+
+  res.json({ member: updated });
 });
 
 // GET /api/members/search — search members by name or cell number
@@ -177,6 +220,8 @@ router.get("/members/search", async (req, res): Promise<void> => {
       id: membersTable.id,
       fullName: membersTable.fullName,
       cellNumber: membersTable.cellNumber,
+      avatar: membersTable.avatar,
+      lastSeenAt: membersTable.lastSeenAt,
     })
     .from(membersTable)
     .where(
@@ -258,8 +303,10 @@ router.get("/groups/:id/members", async (req, res): Promise<void> => {
       fullName: membersTable.fullName,
       // Always select and strip below for non-admins
       cellNumber: membersTable.cellNumber,
+      avatar: membersTable.avatar,
       role: membersTable.role,
       status: membersTable.status,
+      lastSeenAt: membersTable.lastSeenAt,
       roleInGroup: groupMembersTable.roleInGroup,
       joinedAt: groupMembersTable.joinedAt,
     })
@@ -315,6 +362,7 @@ router.get("/groups/:id/messages", async (req, res): Promise<void> => {
       groupId: messagesTable.groupId,
       senderId: messagesTable.senderId,
       senderName: membersTable.fullName,
+      senderAvatar: membersTable.avatar,
       content: messagesTable.content,
       contentType: messagesTable.contentType,
       deliveredAt: messagesTable.deliveredAt,
