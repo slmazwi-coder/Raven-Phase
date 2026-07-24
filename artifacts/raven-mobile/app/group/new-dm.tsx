@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -10,11 +11,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
-import { createDirectGroup, searchMembers, type SearchMember } from '@/lib/api';
+import { searchMembers, type SearchMember } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const C = colors.light;
@@ -30,12 +30,10 @@ export default function NewDirectChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { token } = useAuth();
-  const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<SearchMember | null>(null);
   const [searching, setSearching] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   async function handleSearch() {
     const q = normalizePhone(query);
@@ -57,21 +55,6 @@ export default function NewDirectChatScreen() {
       Alert.alert('Search failed', e?.message ?? 'Could not search members');
     } finally {
       setSearching(false);
-    }
-  }
-
-  async function handleStartChat() {
-    if (!result || !token) return;
-
-    setCreating(true);
-    try {
-      const res = await createDirectGroup(token, result.id);
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
-      router.replace(`/group/${res.group.id}`);
-    } catch (e: any) {
-      Alert.alert('Could not start chat', e?.message ?? 'Please try again');
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -115,17 +98,25 @@ export default function NewDirectChatScreen() {
         </View>
 
         {result ? (
-          <View style={styles.resultCard}>
+          <Pressable
+            style={styles.resultCard}
+            onPress={() => router.push(`/user/${result.id}`)}
+          >
             <View style={styles.resultAvatar}>
-              <Text style={styles.resultInitial}>
-                {result.fullName.charAt(0).toUpperCase()}
-              </Text>
+              {result.avatar ? (
+                <Image source={{ uri: result.avatar }} style={styles.resultAvatarImg} />
+              ) : (
+                <Text style={styles.resultInitial}>
+                  {result.fullName.charAt(0).toUpperCase()}
+                </Text>
+              )}
             </View>
             <View style={styles.resultBody}>
               <Text style={styles.resultName}>{result.fullName}</Text>
               <Text style={styles.resultPhone}>{result.cellNumber}</Text>
             </View>
-          </View>
+            <Feather name="chevron-right" size={20} color={C.textTertiary} />
+          </Pressable>
         ) : (
           <Text style={styles.hint}>
             Search by full phone number including country code.
@@ -135,19 +126,15 @@ export default function NewDirectChatScreen() {
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <Pressable
-          onPress={handleStartChat}
-          disabled={!result || creating}
+          onPress={() => router.push(`/user/${result!.id}`)}
+          disabled={!result}
           style={({ pressed }) => [
             styles.startBtn,
-            (!result || creating) && styles.startBtnDisabled,
+            !result && styles.startBtnDisabled,
             pressed && styles.startBtnPressed,
           ]}
         >
-          {creating ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.startBtnText}>Start chat</Text>
-          )}
+          <Text style={styles.startBtnText}>View profile</Text>
         </Pressable>
       </View>
     </View>
@@ -226,6 +213,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  resultAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   resultInitial: {
     fontSize: 18,

@@ -63,13 +63,22 @@ export default function GroupsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Raven</Text>
-        <Pressable
-          onPress={() => router.push('/group/create')}
-          style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnPressed]}
-          hitSlop={12}
-        >
-          <Feather name="plus" size={22} color={C.primary} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => router.push('/group/new-dm')}
+            style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnPressed]}
+            hitSlop={12}
+          >
+            <Feather name="message-circle" size={22} color={C.primary} />
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/group/create')}
+            style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnPressed]}
+            hitSlop={12}
+          >
+            <Feather name="plus" size={22} color={C.primary} />
+          </Pressable>
+        </View>
       </View>
 
       {isLoading ? (
@@ -154,6 +163,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
   headerTitle: {
     fontSize: 22,

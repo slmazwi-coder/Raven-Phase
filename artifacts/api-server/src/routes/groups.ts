@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../middleware/requireAuth";
 import { logger } from "../lib/logger";
-import { getGroupMemberIds } from "../lib/ws-broadcast";
+import { getGroupMemberIds, isMemberOnline } from "../lib/ws-broadcast";
 
 const router: IRouter = Router();
 
@@ -317,6 +317,54 @@ router.get("/members/search", async (req, res): Promise<void> => {
     members: rows
       .filter((m) => m.id !== callerId)
       .map((m) => ({ ...m, cellNumber: m.cellNumber })),
+  });
+});
+
+// GET /api/members/:id — public profile for any authenticated member
+// Admins and the member themself see the phone number; otherwise it's hidden.
+router.get("/members/:id", async (req, res): Promise<void> => {
+  const callerId = req.auth!.sub;
+  const callerRole = req.auth!.role;
+  const targetId = req.params.id as string;
+
+  const [member] = await db
+    .select({
+      id: membersTable.id,
+      fullName: membersTable.fullName,
+      avatar: membersTable.avatar,
+      cellNumber: membersTable.cellNumber,
+      role: membersTable.role,
+      status: membersTable.status,
+      lastSeenAt: membersTable.lastSeenAt,
+      lastSeenEnabled: membersTable.lastSeenEnabled,
+      createdAt: membersTable.createdAt,
+    })
+    .from(membersTable)
+    .where(eq(membersTable.id, targetId))
+    .limit(1);
+
+  if (!member) {
+    res.status(404).json({ error: "Member not found" });
+    return;
+  }
+
+  const isSelf = callerId === targetId;
+  const isAdmin = callerRole === "admin";
+  const showPhone = isSelf || isAdmin;
+  const showPresence = isSelf || member.lastSeenEnabled;
+
+  res.json({
+    member: {
+      id: member.id,
+      fullName: member.fullName,
+      avatar: member.avatar,
+      role: member.role,
+      status: member.status,
+      isOnline: isMemberOnline(targetId),
+      lastSeenAt: showPresence ? member.lastSeenAt : null,
+      cellNumber: showPhone ? member.cellNumber : undefined,
+      createdAt: member.createdAt,
+    },
   });
 });
 

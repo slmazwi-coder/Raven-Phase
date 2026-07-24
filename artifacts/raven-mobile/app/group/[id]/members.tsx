@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -24,7 +25,7 @@ const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
   member: { bg: C.surface, text: C.textSecondary },
 };
 
-function MemberRow({ member: m }: { member: GroupMember }) {
+function MemberRow({ member: m, onPress }: { member: GroupMember; onPress: () => void }) {
   const badge = ROLE_BADGE[m.roleInGroup] ?? ROLE_BADGE.member;
   const initials = m.fullName
     .split(' ')
@@ -34,9 +35,13 @@ function MemberRow({ member: m }: { member: GroupMember }) {
     .toUpperCase();
 
   return (
-    <View style={styles.row}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
       <View style={styles.rowAvatar}>
-        <Text style={styles.rowInitials}>{initials || '?'}</Text>
+        {m.avatar ? (
+          <Image source={{ uri: m.avatar }} style={styles.rowAvatarImg} />
+        ) : (
+          <Text style={styles.rowInitials}>{initials || '?'}</Text>
+        )}
       </View>
       <View style={styles.rowBody}>
         <Text style={styles.rowName} numberOfLines={1}>
@@ -51,7 +56,7 @@ function MemberRow({ member: m }: { member: GroupMember }) {
           {m.roleInGroup}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -96,7 +101,12 @@ export default function MembersScreen() {
         <FlatList
           data={data?.members ?? []}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <MemberRow member={item} />}
+          renderItem={({ item }) => (
+            <MemberRow
+              member={item}
+              onPress={() => router.push(`/user/${item.id}`)}
+            />
+          )}
           scrollEnabled={!!(data?.members?.length)}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -176,6 +186,7 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 12,
   },
+  rowPressed: { opacity: 0.7 },
   rowAvatar: {
     width: 44,
     height: 44,
@@ -183,6 +194,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  rowAvatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   rowInitials: {
     fontSize: 16,

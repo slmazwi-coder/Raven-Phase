@@ -169,8 +169,16 @@ export interface SearchMember {
   createdAt?: string;
 }
 
+export interface MemberProfile extends SearchMember {
+  isOnline?: boolean;
+}
+
 export function fetchMember(token: string) {
   return apiRequest<{ member: SearchMember }>('/members/me', { token });
+}
+
+export function fetchMemberById(token: string, memberId: string) {
+  return apiRequest<{ member: MemberProfile }>(`/members/${memberId}`, { token });
 }
 
 export function updateProfile(

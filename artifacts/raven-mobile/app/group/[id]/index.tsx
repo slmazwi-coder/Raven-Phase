@@ -519,7 +519,13 @@ export default function ChatScreen() {
         </Pressable>
         <Pressable
           style={styles.headerMeta}
-          onPress={() => router.push(`/group/${groupId}/members`)}
+          onPress={() => {
+            if (isDirect && otherMember) {
+              router.push(`/user/${otherMember.id}`);
+            } else {
+              router.push(`/group/${groupId}/members`);
+            }
+          }}
         >
           <View style={styles.headerNameRow}>
             <Text style={styles.headerName} numberOfLines={1}>
