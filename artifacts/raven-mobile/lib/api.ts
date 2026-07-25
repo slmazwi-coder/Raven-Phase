@@ -138,6 +138,17 @@ export interface Group {
   createdBy?: string;
   roleInGroup: string;
   joinedAt: string;
+  memberCount?: number;
+  unreadCount?: number;
+  avatar?: string | null;
+  otherIsOnline?: boolean;
+  lastMessage?: {
+    content: string;
+    createdAt: string;
+    senderName?: string;
+    contentType: string;
+    mediaName?: string | null;
+  } | null;
 }
 
 export function fetchGroups(token: string) {
@@ -187,6 +198,26 @@ export function updateProfile(
   body: { full_name?: string; avatar?: string },
 ) {
   return apiRequest<{ member: SearchMember }>('/members/me', {
+    method: 'PATCH',
+    token,
+    body,
+  });
+}
+
+export interface PrivacySettings {
+  lastSeenEnabled: boolean;
+  readReceiptsEnabled: boolean;
+}
+
+export function fetchPrivacy(token: string) {
+  return apiRequest<{ privacy: PrivacySettings }>('/members/me/privacy', { token });
+}
+
+export function updatePrivacy(
+  token: string,
+  body: { last_seen_enabled?: boolean; read_receipts_enabled?: boolean },
+) {
+  return apiRequest<{ privacy: PrivacySettings }>('/members/me/privacy', {
     method: 'PATCH',
     token,
     body,

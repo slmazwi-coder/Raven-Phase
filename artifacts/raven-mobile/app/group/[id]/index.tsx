@@ -65,15 +65,13 @@ function MessageStatus({ msg, isMine, memberCount, otherMembers }: BubbleProps) 
   const readCount = readByOthers.length;
   const allRead = memberCount > 1 && readCount >= otherIds.length;
 
-  let icon: React.ComponentProps<typeof Feather>['name'] = 'check';
-  if (allRead) icon = 'check-circle';
-  else if (msg.deliveredAt) icon = 'check';
-
-  const color = allRead ? C.primary : 'rgba(255,255,255,0.65)';
+  const color = allRead ? C.primary : 'rgba(233,237,239,0.65)';
+  const icon = allRead ? 'check-circle' : 'check';
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 4 }}>
-      <Feather name={icon} size={10} color={color} />
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 4, gap: -6 }}>
+      <Feather name="check" size={10} color={color} />
+      <Feather name={icon} size={10} color={color} style={{ marginLeft: -5 }} />
     </View>
   );
 }
@@ -420,6 +418,18 @@ export default function ChatScreen() {
     Alert.alert('Group options', '', options as any);
   }
 
+  function handleCall() {
+    if (isDirect && otherMember?.cellNumber) {
+      Linking.openURL(`tel:${otherMember.cellNumber}`).catch(() => {});
+    } else {
+      Alert.alert('Voice call', 'Calls are available for direct chats when the contact has a phone number.');
+    }
+  }
+
+  function handleVideo() {
+    Alert.alert('Video call', 'Video calls are not enabled yet.');
+  }
+
   const typingText =
     typingUsers.length > 0
       ? `${typingUsers.length === 1 ? 'Someone' : `${typingUsers.length} people`} typing…`
@@ -623,27 +633,36 @@ export default function ChatScreen() {
             }
           }}
         >
-          <View style={styles.headerNameRow}>
+          {otherMember?.avatar ? (
+            <Image source={{ uri: otherMember.avatar }} style={styles.headerAvatar} />
+          ) : (
+            <View style={styles.headerAvatar}>
+              <Text style={styles.headerAvatarInitial}>
+                {groupName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View style={styles.headerText}>
             <Text style={styles.headerName} numberOfLines={1}>
               {groupName}
             </Text>
-            <View
-              style={[
-                styles.connectionDot,
-                { backgroundColor: isConnected ? '#34C759' : C.textTertiary },
-              ]}
-            />
+            {memberCount > 0 ? (
+              <Text style={styles.headerSub}>{headerSub}</Text>
+            ) : null}
           </View>
-          {memberCount > 0 ? (
-            <Text style={styles.headerSub}>{headerSub}</Text>
-          ) : null}
+        </Pressable>
+        <Pressable onPress={handleCall} style={styles.headerAction} hitSlop={12}>
+          <Feather name="phone" size={20} color={C.text} />
+        </Pressable>
+        <Pressable onPress={handleVideo} style={styles.headerAction} hitSlop={12}>
+          <Feather name="video" size={20} color={C.text} />
         </Pressable>
         <Pressable
           onPress={showChatMenu}
           style={styles.menuBtn}
           hitSlop={12}
         >
-          <Feather name="more-vertical" size={22} color={C.textSecondary} />
+          <Feather name="more-vertical" size={22} color={C.text} />
         </Pressable>
       </View>
 
@@ -793,14 +812,29 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: C.surfaceElevated,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
-    gap: 10,
+    gap: 6,
   },
-  backBtn: { padding: 4 },
-  headerMeta: { flex: 1 },
+  backBtn: { padding: 6 },
+  headerMeta: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerText: { flex: 1, justifyContent: 'center' },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarInitial: {
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    color: C.primary,
+  },
   headerName: {
     fontSize: 16,
     fontFamily: 'Inter_600SemiBold',
@@ -811,17 +845,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: C.textSecondary,
   },
-  menuBtn: { padding: 6, marginLeft: 4 },
-  headerNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  connectionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+  headerAction: { padding: 8 },
+  menuBtn: { padding: 8 },
 
   center: {
     flex: 1,
@@ -975,7 +1000,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: C.border,
-    backgroundColor: C.background,
+    backgroundColor: C.tabBar,
     gap: 8,
   },
   attachBtn: {
@@ -988,7 +1013,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    backgroundColor: C.surface,
+    backgroundColor: C.surfaceElevated,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: C.border,

@@ -40,18 +40,36 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Groups',
+          title: 'Chats',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="message-square" size={size} color={color} />
+            <Feather name="message-circle" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="status"
+        options={{
+          title: 'Status',
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="aperture" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="calls"
+        options={{
+          title: 'Calls',
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="phone" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: 'Settings',
           tabBarIcon: ({ color, size }) => (
-            <Feather name="user" size={size} color={color} />
+            <Feather name="settings" size={size} color={color} />
           ),
         }}
       />

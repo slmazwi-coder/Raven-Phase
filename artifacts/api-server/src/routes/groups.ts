@@ -29,6 +29,7 @@ router.get("/groups", async (req, res): Promise<void> => {
       name: groupsTable.name,
       isDirect: groupsTable.isDirect,
       readReceiptsEnabled: groupsTable.readReceiptsEnabled,
+      createdBy: groupsTable.createdBy,
       createdAt: groupsTable.createdAt,
       roleInGroup: groupMembersTable.roleInGroup,
       joinedAt: groupMembersTable.joinedAt,
@@ -36,9 +37,129 @@ router.get("/groups", async (req, res): Promise<void> => {
     .from(groupMembersTable)
     .innerJoin(groupsTable, eq(groupMembersTable.groupId, groupsTable.id))
     .where(eq(groupMembersTable.memberId, memberId))
-    .orderBy(asc(groupsTable.name));
+    .orderBy(desc(groupsTable.createdAt));
 
-  res.json({ groups: rows });
+  const groupIds = rows.map((r) => r.id);
+
+  // Latest message per group
+  const lastMessageMap = new Map<string, { content: string; createdAt: Date; senderName?: string; contentType: string; mediaName?: string | null }>();
+  if (groupIds.length > 0) {
+    const latestMessages = await db
+      .select({
+        groupId: messagesTable.groupId,
+        content: messagesTable.content,
+        createdAt: messagesTable.createdAt,
+        senderId: messagesTable.senderId,
+        senderName: membersTable.fullName,
+        contentType: messagesTable.contentType,
+        mediaName: messagesTable.mediaName,
+      })
+      .from(messagesTable)
+      .innerJoin(membersTable, eq(messagesTable.senderId, membersTable.id))
+      .where(inArray(messagesTable.groupId, groupIds))
+      .orderBy(desc(messagesTable.createdAt));
+
+    for (const m of latestMessages) {
+      if (!lastMessageMap.has(m.groupId)) {
+        lastMessageMap.set(m.groupId, m);
+      }
+    }
+  }
+
+  // Unread count per group
+  const unreadMap = new Map<string, number>();
+  if (groupIds.length > 0) {
+    const joinedAtMap = new Map(rows.map((r) => [r.id, r.joinedAt]));
+    const messageRows = await db
+      .select({
+        groupId: messagesTable.groupId,
+        id: messagesTable.id,
+        senderId: messagesTable.senderId,
+        createdAt: messagesTable.createdAt,
+        readMemberId: messageReadsTable.memberId,
+      })
+      .from(messagesTable)
+      .leftJoin(
+        messageReadsTable,
+        and(
+          eq(messageReadsTable.messageId, messagesTable.id),
+          eq(messageReadsTable.memberId, memberId),
+        ),
+      )
+      .where(inArray(messagesTable.groupId, groupIds));
+
+    for (const m of messageRows) {
+      if (m.senderId === memberId) continue;
+      if (m.readMemberId) continue;
+      const joinedAt = joinedAtMap.get(m.groupId);
+      if (joinedAt && m.createdAt.getTime() <= joinedAt.getTime()) continue;
+      unreadMap.set(m.groupId, (unreadMap.get(m.groupId) ?? 0) + 1);
+    }
+  }
+
+  // Member counts
+  const memberCountMap = new Map<string, number>();
+  if (groupIds.length > 0) {
+    const counts = await db
+      .select({ groupId: groupMembersTable.groupId, count: sql<number>`count(*)`.as("count") })
+      .from(groupMembersTable)
+      .where(inArray(groupMembersTable.groupId, groupIds))
+      .groupBy(groupMembersTable.groupId);
+    for (const c of counts) {
+      memberCountMap.set(c.groupId, c.count);
+    }
+  }
+
+  // Direct group avatars/names of the other participant
+  const directMetaMap = new Map<string, { avatar?: string | null; fullName: string; isOnline?: boolean }>();
+  const directGroupIds = rows.filter((r) => r.isDirect).map((r) => r.id);
+  if (directGroupIds.length > 0) {
+    const metaRows = await db
+      .select({
+        groupId: groupMembersTable.groupId,
+        avatar: membersTable.avatar,
+        fullName: membersTable.fullName,
+        isOnline: membersTable.isOnline,
+        lastSeenAt: membersTable.lastSeenAt,
+      })
+      .from(groupMembersTable)
+      .innerJoin(membersTable, eq(groupMembersTable.memberId, membersTable.id))
+      .where(and(inArray(groupMembersTable.groupId, directGroupIds), ne(groupMembersTable.memberId, memberId)));
+    for (const m of metaRows) {
+      const online = m.lastSeenAt != null && Date.now() - new Date(m.lastSeenAt).getTime() < 2 * 60 * 1000;
+      directMetaMap.set(m.groupId, {
+        avatar: m.avatar,
+        fullName: m.fullName,
+        isOnline: m.isOnline || online,
+      });
+    }
+  }
+
+  const groups = rows.map((r) => {
+    const last = lastMessageMap.get(r.id);
+    const directMeta = directMetaMap.get(r.id);
+    const name = r.isDirect && directMeta ? directMeta.fullName : r.name;
+    const avatar = r.isDirect ? directMeta?.avatar ?? null : null;
+    return {
+      ...r,
+      name,
+      avatar,
+      memberCount: Number(memberCountMap.get(r.id) ?? 1),
+      lastMessage: last
+        ? {
+            content: last.content,
+            createdAt: last.createdAt,
+            senderName: r.isDirect ? undefined : last.senderName,
+            contentType: last.contentType,
+            mediaName: last.mediaName,
+          }
+        : null,
+      unreadCount: unreadMap.get(r.id) ?? 0,
+      otherIsOnline: r.isDirect ? directMeta?.isOnline ?? false : undefined,
+    };
+  });
+
+  res.json({ groups });
 });
 
 // POST /api/groups — any authenticated member can create a group
@@ -282,6 +403,54 @@ router.patch("/members/me", async (req, res): Promise<void> => {
   res.json({ member: updated });
 });
 
+// GET /api/members/me/privacy — current privacy settings
+router.get("/members/me/privacy", async (req, res): Promise<void> => {
+  const memberId = req.auth!.sub;
+
+  const [member] = await db
+    .select({
+      lastSeenEnabled: membersTable.lastSeenEnabled,
+      readReceiptsEnabled: membersTable.readReceiptsEnabled,
+    })
+    .from(membersTable)
+    .where(eq(membersTable.id, memberId));
+
+  if (!member) {
+    res.status(404).json({ error: "Member not found" });
+    return;
+  }
+
+  res.json({ privacy: member });
+});
+
+// PATCH /api/members/me/privacy — toggle last seen and read receipts
+router.patch("/members/me/privacy", async (req, res): Promise<void> => {
+  const memberId = req.auth!.sub;
+  const { last_seen_enabled: lastSeenEnabled, read_receipts_enabled: readReceiptsEnabled } = req.body as {
+    last_seen_enabled?: boolean;
+    read_receipts_enabled?: boolean;
+  };
+
+  const updates: Partial<{ lastSeenEnabled: boolean; readReceiptsEnabled: boolean; updatedAt: Date }> = {
+    updatedAt: new Date(),
+  };
+  if (typeof lastSeenEnabled === "boolean") updates.lastSeenEnabled = lastSeenEnabled;
+  if (typeof readReceiptsEnabled === "boolean") updates.readReceiptsEnabled = readReceiptsEnabled;
+
+  const [updated] = await db
+    .update(membersTable)
+    .set(updates)
+    .where(eq(membersTable.id, memberId))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Member not found" });
+    return;
+  }
+
+  res.json({ privacy: { lastSeenEnabled: updated.lastSeenEnabled, readReceiptsEnabled: updated.readReceiptsEnabled } });
+});
+
 // GET /api/members/search — search members by name or cell number
 router.get("/members/search", async (req, res): Promise<void> => {
   const { q } = req.query as { q?: string };
@@ -387,6 +556,7 @@ router.get("/groups/:id", async (req, res): Promise<void> => {
       name: groupsTable.name,
       isDirect: groupsTable.isDirect,
       readReceiptsEnabled: groupsTable.readReceiptsEnabled,
+      createdBy: groupsTable.createdBy,
       createdAt: groupsTable.createdAt,
       roleInGroup: groupMembersTable.roleInGroup,
     })
@@ -404,7 +574,12 @@ router.get("/groups/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({ group: membership });
+  const [countRow] = await db
+    .select({ count: sql<number>`count(*)`.as("count") })
+    .from(groupMembersTable)
+    .where(eq(groupMembersTable.groupId, groupId));
+
+  res.json({ group: { ...membership, memberCount: Number(countRow?.count ?? 1) } });
 });
 
 // GET /api/groups/:id/members — list group members

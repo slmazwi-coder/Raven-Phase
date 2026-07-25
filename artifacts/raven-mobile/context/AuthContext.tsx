@@ -15,6 +15,7 @@ export interface AuthMember {
   id: string;
   role: 'admin' | 'moderator' | 'member';
   fullName?: string;
+  cellNumber?: string;
 }
 
 interface AuthContextValue {

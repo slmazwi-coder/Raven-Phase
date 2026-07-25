@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -19,28 +20,35 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import colors from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
-import { fetchMember, updateProfile } from '@/lib/api';
+import {
+  fetchMember,
+  fetchPrivacy,
+  updatePrivacy,
+  updateProfile,
+} from '@/lib/api';
 
 const C = colors.light;
 
-const ROLE_COLORS: Record<string, string> = {
-  admin: C.primary,
-  moderator: '#9B6FD4',
-  member: C.textSecondary,
-};
-
-export default function ProfileScreen() {
+export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { member, token, logout } = useAuth();
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data: profileData, isLoading } = useQuery({
     queryKey: ['member', token],
     queryFn: () => fetchMember(token!),
     enabled: !!token,
   });
 
-  const profile = data?.member;
+  const { data: privacyData } = useQuery({
+    queryKey: ['privacy', token],
+    queryFn: () => fetchPrivacy(token!),
+    enabled: !!token,
+  });
+
+  const profile = profileData?.member;
+  const privacy = privacyData?.privacy;
+
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(profile?.fullName ?? '');
   const [saving, setSaving] = useState(false);
@@ -53,26 +61,17 @@ export default function ProfileScreen() {
     },
   });
 
+  const privacyMutation = useMutation({
+    mutationFn: (body: { last_seen_enabled?: boolean; read_receipts_enabled?: boolean }) =>
+      updatePrivacy(token!, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['privacy', token] });
+    },
+    onError: (e: any) => Alert.alert('Update failed', e?.message ?? 'Could not update privacy'),
+  });
+
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = insets.bottom;
-
-  function handleLogout() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      'Sign out',
-      'Are you sure you want to sign out of Raven?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign out',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-          },
-        },
-      ],
-    );
-  }
 
   async function pickAvatar() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -127,144 +126,160 @@ export default function ProfileScreen() {
     }
   }
 
-  const roleColor = ROLE_COLORS[member?.role ?? 'member'] ?? C.textSecondary;
+  function handleLogout() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert('Sign out', 'Are you sure you want to sign out of Raven?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+        },
+      },
+    ]);
+  }
+
   const displayName = profile?.fullName ?? member?.fullName ?? 'Raven User';
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile & Settings</Text>
+        <Text style={styles.headerTitle}>Settings</Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: bottomPadding + 24 }]}
-      >
-        {/* Avatar */}
-        <View style={styles.avatarSection}>
-          <Pressable onPress={pickAvatar} disabled={saving} style={styles.avatarWrap}>
-            {profile?.avatar ? (
-              <Image source={{ uri: profile.avatar }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Text style={styles.avatarInitial}>
-                  {displayName.charAt(0).toUpperCase()}
-                </Text>
+      {isLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={C.primary} size="large" />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: bottomPadding + 24 }]}>
+          {/* Profile card */}
+          <View style={styles.profileCard}>
+            <Pressable onPress={pickAvatar} disabled={saving} style={styles.avatarWrap}>
+              {profile?.avatar ? (
+                <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                  <Text style={styles.avatarInitial}>{displayName.charAt(0).toUpperCase()}</Text>
+                </View>
+              )}
+              <View style={styles.cameraBadge}>
+                <Feather name="camera" size={14} color="#fff" />
               </View>
-            )}
-            <View style={styles.cameraBadge}>
-              <Feather name="camera" size={14} color="#fff" />
-            </View>
-          </Pressable>
-
-          {editingName ? (
-            <View style={styles.nameEditRow}>
-              <TextInput
-                style={styles.nameInput}
-                value={nameDraft}
-                onChangeText={setNameDraft}
-                onBlur={saveName}
-                onSubmitEditing={saveName}
-                autoFocus
-                selectTextOnFocus
-              />
-              <Pressable onPress={saveName} style={styles.nameSaveBtn}>
-                <Feather name="check" size={20} color={C.primary} />
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable onPress={() => { setEditingName(true); setNameDraft(displayName); }} style={styles.nameRow}>
-              <Text style={styles.name} numberOfLines={1}>
-                {displayName}
-              </Text>
-              <Feather name="edit-2" size={16} color={C.textTertiary} />
             </Pressable>
-          )}
 
-          {profile?.cellNumber ? (
-            <Text style={styles.phone}>{profile.cellNumber}</Text>
-          ) : null}
+            {editingName ? (
+              <View style={styles.nameEditRow}>
+                <TextInput
+                  style={styles.nameInput}
+                  value={nameDraft}
+                  onChangeText={setNameDraft}
+                  onBlur={saveName}
+                  onSubmitEditing={saveName}
+                  autoFocus
+                  selectTextOnFocus
+                />
+                <Pressable onPress={saveName} style={styles.nameSaveBtn}>
+                  <Feather name="check" size={20} color={C.primary} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => {
+                  setEditingName(true);
+                  setNameDraft(displayName);
+                }}
+                style={styles.nameRow}
+              >
+                <Text style={styles.name} numberOfLines={1}>
+                  {displayName}
+                </Text>
+                <Feather name="edit-2" size={16} color={C.textTertiary} />
+              </Pressable>
+            )}
 
-          {saving ? <ActivityIndicator color={C.primary} style={{ marginTop: 8 }} /> : null}
-
-          <View style={[styles.roleBadge, { backgroundColor: `${roleColor}22` }]}>
-            <Text style={[styles.roleText, { color: roleColor }]}>
-              {member?.role
-                ? member.role.charAt(0).toUpperCase() + member.role.slice(1)
-                : 'Member'}
-            </Text>
+            {profile?.cellNumber ? <Text style={styles.phone}>{profile.cellNumber}</Text> : null}
+            {saving ? <ActivityIndicator color={C.primary} style={{ marginTop: 8 }} /> : null}
           </View>
-        </View>
 
-        {/* Account */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.card}>
-            <Row icon="user" label="Member ID" value={member?.id ?? ''} />
-            <Divider />
-            <Row icon="shield" label="Status" value={profile?.status ?? 'active'} />
+          {/* Privacy */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Privacy</Text>
+            <View style={styles.card}>
+              <ToggleRow
+                icon="eye"
+                label="Last seen"
+                value={privacy?.lastSeenEnabled ?? true}
+                onValueChange={(v) => privacyMutation.mutate({ last_seen_enabled: v })}
+              />
+              <Divider />
+              <ToggleRow
+                icon="check-circle"
+                label="Read receipts"
+                value={privacy?.readReceiptsEnabled ?? true}
+                onValueChange={(v) => privacyMutation.mutate({ read_receipts_enabled: v })}
+              />
+            </View>
           </View>
-        </View>
 
-        {/* Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          <View style={styles.card}>
-            <PressableRow icon="bell" label="Notifications" />
-            <Divider />
-            <PressableRow icon="lock" label="Privacy & Security" />
-            <Divider />
-            <PressableRow icon="help-circle" label="Help & Support" />
-            <Divider />
-            <PressableRow icon="info" label="About Raven" />
+          {/* General */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>General</Text>
+            <View style={styles.card}>
+              <PressableRow icon="bell" label="Notifications" />
+              <Divider />
+              <PressableRow icon="shield" label="Security" />
+              <Divider />
+              <PressableRow icon="help-circle" label="Help" />
+              <Divider />
+              <PressableRow icon="info" label="About Raven" />
+            </View>
           </View>
-        </View>
 
-        {/* Sign out */}
-        <Pressable
-          onPress={handleLogout}
-          style={({ pressed }) => [styles.signOutBtn, pressed && styles.signOutBtnPressed]}
-        >
-          <Feather name="log-out" size={18} color={C.accent} />
-          <Text style={styles.signOutText}>Sign out</Text>
-        </Pressable>
-      </ScrollView>
+          <Pressable
+            onPress={handleLogout}
+            style={({ pressed }) => [styles.signOutBtn, pressed && styles.signOutBtnPressed]}
+          >
+            <Feather name="log-out" size={18} color={C.accent} />
+            <Text style={styles.signOutText}>Sign out</Text>
+          </Pressable>
+        </ScrollView>
+      )}
     </View>
   );
 }
 
-function Row({
+function ToggleRow({
   icon,
   label,
   value,
+  onValueChange,
 }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   label: string;
-  value: string;
+  value: boolean;
+  onValueChange: (v: boolean) => void;
 }) {
   return (
     <View style={styles.row}>
-      <Feather name={icon} size={18} color={C.textSecondary} />
-      <View style={styles.rowBody}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowValue} numberOfLines={1}>
-          {value}
-        </Text>
-      </View>
+      <Feather name={icon} size={20} color={C.textSecondary} />
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: C.surface, true: C.primary }}
+        thumbColor="#fff"
+      />
     </View>
   );
 }
 
-function PressableRow({
-  icon,
-  label,
-}: {
-  icon: React.ComponentProps<typeof Feather>['name'];
-  label: string;
-}) {
+function PressableRow({ icon, label }: { icon: React.ComponentProps<typeof Feather>['name']; label: string }) {
   return (
     <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-      <Feather name={icon} size={18} color={C.textSecondary} />
-      <Text style={styles.rowLabelFlex}>{label}</Text>
+      <Feather name={icon} size={20} color={C.textSecondary} />
+      <Text style={styles.rowLabel}>{label}</Text>
       <Feather name="chevron-right" size={18} color={C.textTertiary} />
     </Pressable>
   );
@@ -275,28 +290,31 @@ function Divider() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: C.background,
-  },
+  container: { flex: 1, backgroundColor: C.background },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: C.tabBar,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontFamily: 'Inter_700Bold',
     color: C.text,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scroll: {
     paddingTop: 16,
   },
-  avatarSection: {
+  profileCard: {
     alignItems: 'center',
     paddingVertical: 28,
-    gap: 10,
+    paddingHorizontal: 16,
   },
   avatarWrap: {
     position: 'relative',
@@ -306,8 +324,6 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     backgroundColor: C.surface,
-    borderWidth: 2,
-    borderColor: C.border,
   },
   avatarPlaceholder: {
     alignItems: 'center',
@@ -335,7 +351,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 4,
+    marginTop: 14,
   },
   name: {
     fontSize: 20,
@@ -347,7 +363,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 4,
+    marginTop: 14,
   },
   nameInput: {
     minWidth: 180,
@@ -370,17 +386,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_400Regular',
     color: C.textSecondary,
-  },
-  roleBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginTop: 2,
-  },
-  roleText: {
-    fontSize: 13,
-    fontFamily: 'Inter_600SemiBold',
-    textTransform: 'capitalize',
+    marginTop: 4,
   },
   section: {
     marginHorizontal: 16,
@@ -391,7 +397,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     color: C.textTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
     marginBottom: 8,
     marginLeft: 4,
   },
@@ -409,30 +415,16 @@ const styles = StyleSheet.create({
   rowPressed: {
     backgroundColor: C.surfaceElevated,
   },
-  rowBody: {
-    flex: 1,
-    gap: 2,
-  },
   rowLabel: {
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-    color: C.text,
-  },
-  rowLabelFlex: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'Inter_500Medium',
     color: C.text,
-  },
-  rowValue: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-    color: C.textSecondary,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: C.border,
-    marginLeft: 46,
+    marginLeft: 52,
   },
   signOutBtn: {
     flexDirection: 'row',
@@ -442,7 +434,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 8,
     paddingVertical: 14,
-    backgroundColor: `${C.accent}10`,
+    backgroundColor: `${C.accent}15`,
     borderRadius: C.radius,
   },
   signOutBtnPressed: {
