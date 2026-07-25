@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,6 +30,9 @@ import {
   fetchGroup,
   sendMediaMessage,
   markGroupAsRead,
+  leaveGroup,
+  deleteGroup,
+  clearGroupChat,
   type ChatMessage,
 } from '@/lib/api';
 import { useGroupChat } from '@/lib/ws';
@@ -215,6 +218,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const { id: groupId } = useLocalSearchParams<{ id: string }>();
   const { token, member } = useAuth();
+  const queryClient = useQueryClient();
   const { setActiveGroupId, lastEnforcement, clearLastEnforcement } = useSecurity();
 
   const [inputText, setInputText] = useState('');
@@ -323,6 +327,98 @@ export default function ChatScreen() {
       ? 'online'
       : lastSeenText(otherMember?.lastSeenAt)
     : `${memberCount} member${memberCount !== 1 ? 's' : ''}`;
+
+  const myMembership = members.find((m) => m.id === member?.id);
+  const isAdmin = myMembership?.roleInGroup === 'admin';
+  const isCreator = groupData?.group.createdBy === member?.id;
+
+  const leaveMutation = useMutation({
+    mutationFn: () => leaveGroup(groupId!, token!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      router.replace('/(tabs)');
+    },
+    onError: (e: any) => Alert.alert('Could not leave group', e?.message ?? 'Please try again'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteGroup(groupId!, token!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      router.replace('/(tabs)');
+    },
+    onError: (e: any) => Alert.alert('Could not delete group', e?.message ?? 'Please try again'),
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: () => clearGroupChat(groupId!, token!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', groupId] });
+      Alert.alert('Chat history cleared');
+    },
+    onError: (e: any) => Alert.alert('Could not clear chat', e?.message ?? 'Please try again'),
+  });
+
+  function handleLeave() {
+    const title = isDirect ? 'Delete chat' : 'Leave group';
+    const message = isDirect
+      ? 'This will delete the conversation.'
+      : 'You will be removed from this group. The chat history will remain for other members.';
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: isDirect ? 'Delete' : 'Leave',
+        style: 'destructive',
+        onPress: () => leaveMutation.mutate(),
+      },
+    ]);
+  }
+
+  function handleDelete() {
+    Alert.alert(
+      'Delete group',
+      'This cannot be undone. All messages and members will be removed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteMutation.mutate(),
+        },
+      ],
+    );
+  }
+
+  function handleClear() {
+    Alert.alert('Clear chat history', 'All messages will be deleted for everyone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: () => clearMutation.mutate(),
+      },
+    ]);
+  }
+
+  function showChatMenu() {
+    const options: { text: string; onPress?: () => void; style?: 'destructive' | 'cancel' }[] = [
+      { text: 'Members', onPress: () => router.push(`/group/${groupId}/members`) },
+    ];
+
+    if (!isDirect) {
+      if (isAdmin) {
+        options.push({ text: 'Clear chat history', onPress: handleClear });
+        options.push({ text: 'Delete group', onPress: handleDelete, style: 'destructive' });
+      }
+      options.push({ text: 'Leave group', onPress: handleLeave, style: 'destructive' });
+    } else {
+      options.push({ text: 'Delete chat', onPress: handleLeave, style: 'destructive' });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Group options', '', options as any);
+  }
 
   const typingText =
     typingUsers.length > 0
@@ -543,10 +639,11 @@ export default function ChatScreen() {
           ) : null}
         </Pressable>
         <Pressable
-          onPress={() => router.push(`/group/${groupId}/members`)}
-          style={styles.membersBtn}
+          onPress={showChatMenu}
+          style={styles.menuBtn}
+          hitSlop={12}
         >
-          <Feather name="users" size={20} color={C.textSecondary} />
+          <Feather name="more-vertical" size={22} color={C.textSecondary} />
         </Pressable>
       </View>
 
@@ -714,7 +811,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: C.textSecondary,
   },
-  membersBtn: { padding: 6 },
+  menuBtn: { padding: 6, marginLeft: 4 },
   headerNameRow: {
     flexDirection: 'row',
     alignItems: 'center',

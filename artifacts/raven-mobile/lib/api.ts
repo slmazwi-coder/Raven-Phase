@@ -135,6 +135,7 @@ export interface Group {
   isDirect?: boolean;
   readReceiptsEnabled?: boolean;
   createdAt: string;
+  createdBy?: string;
   roleInGroup: string;
   joinedAt: string;
 }
@@ -271,6 +272,35 @@ export function sendMediaMessage(
 
 export function markGroupAsRead(groupId: string, token: string) {
   return apiRequest<{ read: boolean; count?: number }>(`/groups/${groupId}/read`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function leaveGroup(groupId: string, token: string) {
+  return apiRequest<{ left: boolean; deleted?: boolean }>(`/groups/${groupId}/leave`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function deleteGroup(groupId: string, token: string) {
+  return apiRequest<{ deleted: boolean }>(`/groups/${groupId}/delete`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function removeGroupMember(groupId: string, token: string, memberId: string) {
+  return apiRequest<{ removed: boolean }>(`/groups/${groupId}/remove-member`, {
+    method: 'POST',
+    token,
+    body: { member_id: memberId },
+  });
+}
+
+export function clearGroupChat(groupId: string, token: string) {
+  return apiRequest<{ cleared: boolean }>(`/groups/${groupId}/clear`, {
     method: 'POST',
     token,
   });

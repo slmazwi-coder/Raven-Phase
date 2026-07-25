@@ -4,13 +4,14 @@ import { db } from "@workspace/db";
 import {
   groupMembersTable,
   groupsTable,
+  incidentsTable,
   membersTable,
   messageReadsTable,
   messagesTable,
 } from "@workspace/db";
 import { requireAuth } from "../middleware/requireAuth";
 import { logger } from "../lib/logger";
-import { getGroupMemberIds } from "../lib/ws-broadcast";
+import { broadcastToGroup, getGroupMemberIds } from "../lib/ws-broadcast";
 
 const router: IRouter = Router();
 
@@ -732,6 +733,255 @@ router.post("/groups/:id/read", async (req, res): Promise<void> => {
   }
 
   res.json({ read: true, count: unreadMessages.length });
+});
+
+// POST /api/groups/:id/leave — authenticated member leaves the group
+// For direct groups, leaving deletes the conversation entirely.
+router.post("/groups/:id/leave", async (req, res): Promise<void> => {
+  const groupId = req.params.id as string;
+  const memberId = req.auth!.sub;
+
+  const [membership] = await db
+    .select({ roleInGroup: groupMembersTable.roleInGroup })
+    .from(groupMembersTable)
+    .where(
+      and(
+        eq(groupMembersTable.groupId, groupId),
+        eq(groupMembersTable.memberId, memberId),
+      ),
+    );
+
+  if (!membership) {
+    res.status(404).json({ error: "Group not found or you are not a member" });
+    return;
+  }
+
+  const [group] = await db
+    .select({ isDirect: groupsTable.isDirect, createdBy: groupsTable.createdBy })
+    .from(groupsTable)
+    .where(eq(groupsTable.id, groupId));
+
+  if (!group) {
+    res.status(404).json({ error: "Group not found" });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    // For direct chats, one person leaving deletes the whole conversation.
+    if (group.isDirect) {
+      await tx.delete(groupMembersTable).where(eq(groupMembersTable.groupId, groupId));
+      await tx.delete(messagesTable).where(eq(messagesTable.groupId, groupId));
+      await tx
+        .update(incidentsTable)
+        .set({ groupId: null })
+        .where(eq(incidentsTable.groupId, groupId));
+      await tx.delete(groupsTable).where(eq(groupsTable.id, groupId));
+      return;
+    }
+
+    await tx
+      .delete(groupMembersTable)
+      .where(
+        and(
+          eq(groupMembersTable.groupId, groupId),
+          eq(groupMembersTable.memberId, memberId),
+        ),
+      );
+
+    const remaining = await tx
+      .select({ memberId: groupMembersTable.memberId, roleInGroup: groupMembersTable.roleInGroup, joinedAt: groupMembersTable.joinedAt })
+      .from(groupMembersTable)
+      .where(eq(groupMembersTable.groupId, groupId))
+      .orderBy(asc(groupMembersTable.joinedAt));
+
+    if (remaining.length === 0) {
+      await tx.delete(messagesTable).where(eq(messagesTable.groupId, groupId));
+      await tx
+        .update(incidentsTable)
+        .set({ groupId: null })
+        .where(eq(incidentsTable.groupId, groupId));
+      await tx.delete(groupsTable).where(eq(groupsTable.id, groupId));
+    } else if (membership.roleInGroup === "admin" && !remaining.some((m) => m.roleInGroup === "admin")) {
+      // Transfer admin to the longest-tenured remaining member
+      await tx
+        .update(groupMembersTable)
+        .set({ roleInGroup: "admin" })
+        .where(
+          and(
+            eq(groupMembersTable.groupId, groupId),
+            eq(groupMembersTable.memberId, remaining[0].memberId),
+          ),
+        );
+    }
+  });
+
+  try {
+    if (group.isDirect) {
+      await broadcastToGroup(groupId, { type: "group_deleted", groupId }, memberId);
+    } else {
+      await broadcastToGroup(groupId, { type: "member_left", groupId, memberId }, memberId);
+    }
+  } catch {
+    // WS broadcast is best-effort
+  }
+
+  res.json({ left: true, deleted: group.isDirect });
+});
+
+// POST /api/groups/:id/delete — admin or group creator deletes the group
+router.post("/groups/:id/delete", async (req, res): Promise<void> => {
+  const groupId = req.params.id as string;
+  const memberId = req.auth!.sub;
+
+  const [membership] = await db
+    .select({ roleInGroup: groupMembersTable.roleInGroup })
+    .from(groupMembersTable)
+    .where(
+      and(
+        eq(groupMembersTable.groupId, groupId),
+        eq(groupMembersTable.memberId, memberId),
+      ),
+    );
+
+  const [group] = await db
+    .select({ createdBy: groupsTable.createdBy })
+    .from(groupsTable)
+    .where(eq(groupsTable.id, groupId));
+
+  if (!group || !membership) {
+    res.status(404).json({ error: "Group not found or you are not a member" });
+    return;
+  }
+
+  const canDelete = membership.roleInGroup === "admin" || group.createdBy === memberId;
+  if (!canDelete) {
+    res.status(403).json({ error: "Only admins can delete this group" });
+    return;
+  }
+
+  const memberIds = await getGroupMemberIds(groupId);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(groupMembersTable).where(eq(groupMembersTable.groupId, groupId));
+    await tx.delete(messagesTable).where(eq(messagesTable.groupId, groupId));
+    await tx
+      .update(incidentsTable)
+      .set({ groupId: null })
+      .where(eq(incidentsTable.groupId, groupId));
+    await tx.delete(groupsTable).where(eq(groupsTable.id, groupId));
+  });
+
+  try {
+    for (const id of memberIds) {
+      if (id === memberId) continue;
+      const sockets = (await import("../lib/ws-broadcast")).clientsByMember.get(id);
+      if (!sockets) continue;
+      for (const sock of sockets) {
+        if (sock.readyState === (await import("ws")).WebSocket.OPEN) {
+          sock.send(JSON.stringify({ type: "group_deleted", groupId }));
+        }
+      }
+    }
+  } catch {
+    // WS broadcast is best-effort
+  }
+
+  res.json({ deleted: true });
+});
+
+// POST /api/groups/:id/remove-member — admin removes another member
+router.post("/groups/:id/remove-member", async (req, res): Promise<void> => {
+  const groupId = req.params.id as string;
+  const callerId = req.auth!.sub;
+  const { member_id: targetId } = req.body as { member_id?: string };
+
+  if (!targetId || typeof targetId !== "string") {
+    res.status(400).json({ error: "member_id is required" });
+    return;
+  }
+
+  if (targetId === callerId) {
+    res.status(400).json({ error: "Use leave to remove yourself" });
+    return;
+  }
+
+  const [callerMembership] = await db
+    .select({ roleInGroup: groupMembersTable.roleInGroup })
+    .from(groupMembersTable)
+    .where(
+      and(
+        eq(groupMembersTable.groupId, groupId),
+        eq(groupMembersTable.memberId, callerId),
+      ),
+    );
+
+  if (!callerMembership || callerMembership.roleInGroup !== "admin") {
+    res.status(403).json({ error: "Only admins can remove members" });
+    return;
+  }
+
+  const [targetMembership] = await db
+    .select({ memberId: groupMembersTable.memberId })
+    .from(groupMembersTable)
+    .where(
+      and(
+        eq(groupMembersTable.groupId, groupId),
+        eq(groupMembersTable.memberId, targetId),
+      ),
+    );
+
+  if (!targetMembership) {
+    res.status(404).json({ error: "Member not found in this group" });
+    return;
+  }
+
+  await db
+    .delete(groupMembersTable)
+    .where(
+      and(
+        eq(groupMembersTable.groupId, groupId),
+        eq(groupMembersTable.memberId, targetId),
+      ),
+    );
+
+  try {
+    await broadcastToGroup(groupId, { type: "member_removed", groupId, memberId: targetId }, callerId);
+  } catch {
+    // best-effort
+  }
+
+  res.json({ removed: true });
+});
+
+// POST /api/groups/:id/clear — admin clears all messages in the group
+router.post("/groups/:id/clear", async (req, res): Promise<void> => {
+  const groupId = req.params.id as string;
+  const memberId = req.auth!.sub;
+
+  const [membership] = await db
+    .select({ roleInGroup: groupMembersTable.roleInGroup })
+    .from(groupMembersTable)
+    .where(
+      and(
+        eq(groupMembersTable.groupId, groupId),
+        eq(groupMembersTable.memberId, memberId),
+      ),
+    );
+
+  if (!membership || membership.roleInGroup !== "admin") {
+    res.status(403).json({ error: "Only admins can clear chat history" });
+    return;
+  }
+
+  await db.delete(messagesTable).where(eq(messagesTable.groupId, groupId));
+
+  try {
+    await broadcastToGroup(groupId, { type: "chat_cleared", groupId }, memberId);
+  } catch {
+    // best-effort
+  }
+
+  res.json({ cleared: true });
 });
 
 export default router;
