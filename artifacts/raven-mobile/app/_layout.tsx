@@ -15,6 +15,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { SecurityProvider } from '@/context/SecurityContext';
+import { CallProvider } from '@/context/CallContext';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import colors from '@/constants/colors';
 
@@ -49,22 +50,25 @@ function RootLayoutNav() {
   return (
     <>
       <AuthGate />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.light.background },
-          headerTintColor: colors.light.text,
-          headerTitleStyle: { fontFamily: 'Inter_600SemiBold' },
-          headerBackTitle: 'Back',
-          contentStyle: { backgroundColor: colors.light.background },
-        }}
-      >
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="group/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="group/create" options={{ headerShown: false }} />
-        <Stack.Screen name="group/new-dm" options={{ headerShown: false }} />
-      </Stack>
+      <CallProvider>
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: colors.light.background },
+            headerTintColor: colors.light.text,
+            headerTitleStyle: { fontFamily: 'Inter_600SemiBold' },
+            headerBackTitle: 'Back',
+            contentStyle: { backgroundColor: colors.light.background },
+          }}
+        >
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="group/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="group/create" options={{ headerShown: false }} />
+          <Stack.Screen name="group/new-dm" options={{ headerShown: false }} />
+          <Stack.Screen name="call/[id]" options={{ headerShown: false, presentation: 'modal' }} />
+        </Stack>
+      </CallProvider>
     </>
   );
 }

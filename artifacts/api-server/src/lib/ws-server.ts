@@ -8,13 +8,14 @@ import {
   membersTable,
   messagesTable,
 } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { logger } from "./logger";
 import {
   broadcastToGroup,
   clientsByMember,
   getGroupMemberIds,
   getMemberGroups,
+  sendToMember,
   type ClientSocket,
 } from "./ws-broadcast";
 
@@ -71,12 +72,7 @@ export function createWsServer(server: Server): WebSocketServer {
     ws.on("message", async (data) => {
       try {
         const raw = typeof data === "string" ? data : data.toString();
-        const msg = JSON.parse(raw) as {
-          type: string;
-          groupId?: string;
-          content?: string;
-          isTyping?: boolean;
-        };
+        const msg = JSON.parse(raw) as Record<string, any>;
 
         const memberId = ws.memberId!;
         const { groupId } = msg;
@@ -98,6 +94,35 @@ export function createWsServer(server: Server): WebSocketServer {
           ws.send(
             JSON.stringify({ type: "error", error: "Not a member of this group" }),
           );
+          return;
+        }
+
+        const CALL_TYPES = [
+          "call_offer",
+          "call_answer",
+          "call_ice_candidate",
+          "call_end",
+          "call_reject",
+          "call_busy",
+        ];
+        if (CALL_TYPES.includes(msg.type)) {
+          const others = await db
+            .select({ memberId: groupMembersTable.memberId })
+            .from(groupMembersTable)
+            .where(
+              and(
+                eq(groupMembersTable.groupId, groupId),
+                ne(groupMembersTable.memberId, memberId),
+              ),
+            );
+          if (others.length === 0) {
+            ws.send(JSON.stringify({ type: "call_unavailable", groupId }));
+            return;
+          }
+          const payload = { ...msg, from: memberId };
+          for (const o of others) {
+            sendToMember(o.memberId, payload);
+          }
           return;
         }
 

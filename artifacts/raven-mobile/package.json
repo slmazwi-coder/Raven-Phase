@@ -55,6 +55,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "13.0.0",
     "@workspace/raven-security": "workspace:*",
     "expo": "~54.0.27",
     "expo-application": "~7.0.8",
@@ -65,6 +66,7 @@
     "expo-notifications": "~0.32.17",
     "expo-secure-store": "~15.0.8",
     "react": "catalog:",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-webrtc": "124.0.6"
   }
 }

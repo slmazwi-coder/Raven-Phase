@@ -38,6 +38,7 @@ import {
 import { useGroupChat } from '@/lib/ws';
 import { useAuth } from '@/context/AuthContext';
 import { useSecurity } from '@/context/SecurityContext';
+import { useCall } from '@/context/CallContext';
 
 const C = colors.light;
 const MAX_MEDIA_BYTES = 3 * 1024 * 1024; // 3 MB cap for data-uri storage
@@ -218,6 +219,7 @@ export default function ChatScreen() {
   const { token, member } = useAuth();
   const queryClient = useQueryClient();
   const { setActiveGroupId, lastEnforcement, clearLastEnforcement } = useSecurity();
+  const { startCall } = useCall();
 
   const [inputText, setInputText] = useState('');
   const [showAttachments, setShowAttachments] = useState(false);
@@ -419,10 +421,14 @@ export default function ChatScreen() {
   }
 
   function handleCall() {
-    if (isDirect && otherMember?.cellNumber) {
-      Linking.openURL(`tel:${otherMember.cellNumber}`).catch(() => {});
+    if (isDirect && otherMember) {
+      startCall(groupId, {
+        id: otherMember.id,
+        fullName: otherMember.fullName,
+        avatar: otherMember.avatar ?? null,
+      });
     } else {
-      Alert.alert('Voice call', 'Calls are available for direct chats when the contact has a phone number.');
+      Alert.alert('Voice call', 'Calls are available for direct chats.');
     }
   }
 

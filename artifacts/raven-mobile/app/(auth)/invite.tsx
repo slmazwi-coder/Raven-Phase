@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
+import { RavenLogo } from '@/components/RavenLogo';
 
 function normalizeCellNumber(input: string): string | null {
   const digits = input.replace(/\D/g, '');
@@ -62,7 +63,7 @@ export default function InviteScreen() {
         resizeMode="contain"
       />
 
-      <Text style={styles.title}>Join Raven</Text>
+      <RavenLogo style={styles.title} />
       <Text style={styles.subtitle}>
         Enter your name and phone number to get started.
       </Text>

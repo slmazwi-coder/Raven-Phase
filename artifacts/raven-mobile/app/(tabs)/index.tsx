@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
 import { fetchGroups, type Group } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { RavenLogo } from '@/components/RavenLogo';
 
 const C = colors.light;
 
@@ -121,7 +122,7 @@ export default function ChatsScreen() {
     <View style={[styles.container, { paddingTop: topPadding }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Raven</Text>
+        <RavenLogo style={styles.headerTitle} />
         <View style={styles.headerActions}>
           <Pressable onPress={() => router.push('/group/create')} style={styles.headerBtn} hitSlop={12}>
             <Feather name="plus" size={20} color={C.text} />
