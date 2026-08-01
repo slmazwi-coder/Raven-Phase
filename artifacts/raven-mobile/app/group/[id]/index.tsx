@@ -6,6 +6,7 @@ import {
   Image,
   Linking,
   Platform,
+  KeyboardAvoidingView,
   Pressable,
   StyleSheet,
   Text,
@@ -13,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
