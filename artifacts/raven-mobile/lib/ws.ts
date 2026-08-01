@@ -9,6 +9,14 @@ interface TypingUser {
   until: number;
 }
 
+function mergeByDate(list: WsMessage[]) {
+  const map = new Map<string, WsMessage>();
+  for (const m of list) map.set(m.id, m);
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+}
+
 export function useGroupChat(
   groupId: string | null,
   token: string | null,
@@ -25,6 +33,11 @@ export function useGroupChat(
 
   useEffect(() => {
     if (!token || !groupId) return;
+
+    // Reset local chat state when switching groups
+    setMessages([]);
+    setTypingUsers([]);
+    setPresence({});
 
     const domain =
       process.env.EXPO_PUBLIC_WS_DOMAIN || process.env.EXPO_PUBLIC_DOMAIN;
@@ -66,10 +79,7 @@ export function useGroupChat(
         );
 
         if (msg.type === 'message' && msg.groupId === groupId) {
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [msg as WsMessage, ...prev];
-          });
+          setMessages((prev) => mergeByDate([...prev, msg as WsMessage]));
         } else if (msg.type === 'typing' && msg.groupId === groupId) {
           const until = Date.now() + 3500;
           setTypingUsers((prev) => {
@@ -139,11 +149,7 @@ export function useGroupChat(
   }, [sendTyping]);
 
   const prependHistory = useCallback((history: WsMessage[]) => {
-    setMessages((prev) => {
-      const ids = new Set(prev.map((m) => m.id));
-      const fresh = history.filter((m) => !ids.has(m.id));
-      return [...prev, ...fresh];
-    });
+    setMessages((prev) => mergeByDate([...prev, ...history]));
   }, []);
 
   const markMessageRead = useCallback((messageId: string) => {
@@ -153,10 +159,7 @@ export function useGroupChat(
 
   const updateMessage = useCallback(
     (message: WsMessage) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === message.id)) return prev;
-        return [message, ...prev];
-      });
+      setMessages((prev) => mergeByDate([...prev, message]));
     },
     [setMessages],
   );

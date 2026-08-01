@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,14 +20,15 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import { File as FSFile, Paths as FSPaths } from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import colors from '@/constants/colors';
 import {
   fetchMessages,
   fetchGroupMembers,
   fetchGroup,
+  sendTextMessage,
   sendMediaMessage,
   markGroupAsRead,
   leaveGroup,
@@ -122,13 +123,40 @@ function MediaBubble({
 function VoiceNotePlayer({ uri, isMine }: { uri: string; isMine: boolean }) {
   const [playing, setPlaying] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const fileUriRef = useRef<string | null>(null);
+
+  function resolveFileUri(): string | null {
+    if (!uri.startsWith('data:')) return uri;
+    if (fileUriRef.current) return fileUriRef.current;
+
+    const match = uri.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+    const mime = match[1];
+    const base64 = match[2];
+    const ext = mime.includes('mp4') || mime.includes('m4a') ? 'm4a' : 'aac';
+
+    try {
+      const file = new FSFile(FSPaths.cache, `raven-voice-${Date.now()}.${ext}`);
+      file.write(base64, { encoding: 'base64' });
+      fileUriRef.current = file.uri;
+      return file.uri;
+    } catch (e) {
+      console.warn('Voice note write error', e);
+      return null;
+    }
+  }
 
   async function toggle() {
     if (!uri) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (!soundRef.current) {
-        const { sound } = await Audio.Sound.createAsync({ uri });
+        const fileUri = resolveFileUri();
+        if (!fileUri) {
+          Alert.alert('Voice note', 'Could not prepare voice note for playback');
+          return;
+        }
+        const { sound } = await Audio.Sound.createAsync({ uri: fileUri });
         soundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((status) => {
           if (!status.isLoaded) return;
@@ -225,6 +253,7 @@ export default function ChatScreen() {
   const [showAttachments, setShowAttachments] = useState(false);
   const [recording, setRecording] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
@@ -268,33 +297,38 @@ export default function ChatScreen() {
 
   const readMutation = useMutation({
     mutationFn: () => markGroupAsRead(groupId!, token!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', groupId] });
+    },
   });
 
   const markRead = useCallback(() => {
-    if (!groupData?.group.readReceiptsEnabled) return;
     readMutation.mutate();
-  }, [groupData?.group.readReceiptsEnabled, readMutation]);
+  }, [readMutation]);
 
   const {
     messages: wsMessages,
-    sendMessage,
     sendTyping,
     prependHistory,
+    updateMessage,
     typingUsers,
     notifyTyping,
     presence,
     isConnected,
   } = useGroupChat(groupId ?? null, token, { markRead });
 
+  const historyMessages = useMemo(
+    () => [...(historyData?.messages ?? [])].reverse(),
+    [historyData?.messages],
+  );
+
   useEffect(() => {
-    if (historyData?.messages && !historyLoadedRef.current) {
-      historyLoadedRef.current = true;
-      prependHistory([...historyData.messages].reverse());
+    if (historyMessages.length) {
+      prependHistory(historyMessages);
       markRead();
     }
-  }, [historyData, prependHistory, markRead]);
-
-  const historyLoadedRef = useRef(false);
+  }, [historyMessages, prependHistory, markRead]);
 
   useEffect(() => {
     const last = wsMessages[0];
@@ -421,15 +455,14 @@ export default function ChatScreen() {
   }
 
   function handleCall() {
-    if (isDirect && otherMember) {
-      startCall(groupId, {
-        id: otherMember.id,
-        fullName: otherMember.fullName,
-        avatar: otherMember.avatar ?? null,
-      });
-    } else {
+    if (!isDirect) {
       Alert.alert('Voice call', 'Calls are available for direct chats.');
+      return;
     }
+    const remote = otherMember
+      ? { id: otherMember.id, fullName: otherMember.fullName, avatar: otherMember.avatar ?? null }
+      : undefined;
+    startCall(groupId, remote);
   }
 
   function handleVideo() {
@@ -441,14 +474,22 @@ export default function ChatScreen() {
       ? `${typingUsers.length === 1 ? 'Someone' : `${typingUsers.length} people`} typing…`
       : null;
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const content = inputText.trim();
-    if (!content) return;
+    if (!content || !token || !groupId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    sendMessage(content);
-    sendTyping(false);
-    setInputText('');
-  }, [inputText, sendMessage, sendTyping]);
+    setIsSending(true);
+    try {
+      const { message } = await sendTextMessage(groupId, token, content);
+      updateMessage(message);
+      sendTyping(false);
+      setInputText('');
+    } catch (e: any) {
+      Alert.alert('Send failed', e?.message ?? 'Could not send message');
+    } finally {
+      setIsSending(false);
+    }
+  }, [inputText, token, groupId, updateMessage, sendTyping]);
 
   const handleInputChange = useCallback(
     (text: string) => {
@@ -477,16 +518,17 @@ export default function ChatScreen() {
       if (uri.startsWith('data:')) {
         base64 = uri.split(',')[1];
       } else {
-        const info = await FileSystem.getInfoAsync(uri);
-        if (!info.exists) {
+        const file = new FSFile(uri);
+        if (!file.exists) {
           Alert.alert('File not found');
           return;
         }
-        if (info.size && info.size > MAX_MEDIA_BYTES) {
+        const fileSize = file.size;
+        if (fileSize > MAX_MEDIA_BYTES) {
           Alert.alert('File too large', 'This file is over the 3 MB cap. Try a smaller file.');
           return;
         }
-        base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+        base64 = await file.base64();
       }
       if (!base64) {
         Alert.alert('Could not read file');
@@ -498,7 +540,7 @@ export default function ChatScreen() {
         : `data:${mime || 'application/octet-stream'};base64,${base64}`;
 
       const caption = inputText.trim();
-      await sendMediaMessage(groupId, token, {
+      const { message } = await sendMediaMessage(groupId, token, {
         content: caption,
         content_type: contentType,
         media_url: dataUri,
@@ -506,6 +548,7 @@ export default function ChatScreen() {
         media_mime: mime,
         media_size: size,
       });
+      updateMessage(message);
       setInputText('');
     } catch (e: any) {
       Alert.alert('Send failed', e?.message ?? 'Could not send media');
@@ -593,8 +636,8 @@ export default function ChatScreen() {
         recordingRef.current = null;
         setRecording(false);
         if (uri) {
-          const info = await FileSystem.getInfoAsync(uri);
-          await uploadMedia('audio', uri, 'Voice note', 'audio/m4a', info.exists ? info.size : undefined);
+          const file = new FSFile(uri);
+          await uploadMedia('audio', uri, 'Voice note', 'audio/m4a', file.exists ? file.size : undefined);
         }
       } catch (e) {
         console.warn('Recording stop error', e);
@@ -609,14 +652,22 @@ export default function ChatScreen() {
     }
 
     try {
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: true,
+      });
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
       );
       recordingRef.current = recording;
       setRecording(true);
-    } catch (e) {
-      Alert.alert('Could not start recording');
+    } catch (e: any) {
+      Alert.alert('Could not start recording', e?.message ?? 'Please check microphone permissions.');
     }
   }
 
@@ -775,14 +826,14 @@ export default function ChatScreen() {
           </Pressable>
           <Pressable
             onPress={handleSend}
-            disabled={!inputText.trim() || sendingMedia}
+            disabled={!inputText.trim() || isSending || sendingMedia}
             style={({ pressed }) => [
               styles.sendBtn,
-              (!inputText.trim() || sendingMedia) && styles.sendBtnDisabled,
+              (!inputText.trim() || isSending || sendingMedia) && styles.sendBtnDisabled,
               pressed && styles.sendBtnPressed,
             ]}
           >
-            {sendingMedia ? (
+            {isSending || sendingMedia ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <Feather name="send" size={18} color="#fff" />

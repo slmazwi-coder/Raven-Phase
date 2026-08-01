@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   groupMembersTable,
@@ -866,12 +866,9 @@ router.post("/groups/:id/read", async (req, res): Promise<void> => {
     .from(groupsTable)
     .where(eq(groupsTable.id, groupId));
 
-  if (!groupCfg?.readReceiptsEnabled) {
-    res.json({ read: false, reason: "Read receipts are disabled for this group" });
-    return;
-  }
-
-  // Mark all messages in the group not already read by this member
+  // Mark all messages in the group not already read by this member.
+  // This always clears the local unread badge; read-receipt broadcasts
+  // are only sent when the group has read receipts enabled.
   const unreadMessages = await db
     .select({ id: messagesTable.id })
     .from(messagesTable)
@@ -885,26 +882,31 @@ router.post("/groups/:id/read", async (req, res): Promise<void> => {
     .where(
       and(
         eq(messagesTable.groupId, groupId),
-        eq(messageReadsTable.messageId, sql`NULL`),
+        isNull(messageReadsTable.memberId),
       ),
     );
 
   if (unreadMessages.length > 0) {
-    await db.insert(messageReadsTable).values(
-      unreadMessages.map((m) => ({
-        messageId: m.id,
-        memberId,
-        readAt: new Date(),
-      })),
-    );
+    await db
+      .insert(messageReadsTable)
+      .values(
+        unreadMessages.map((m) => ({
+          messageId: m.id,
+          memberId,
+          readAt: new Date(),
+        })),
+      )
+      .onConflictDoNothing();
   }
 
-  // Broadcast read receipt to other members (no-op if WS not connected)
-  try {
-    const { sendReadReceipt } = await import("../lib/ws-broadcast");
-    await sendReadReceipt(groupId, memberId, unreadMessages.map((m) => m.id));
-  } catch {
-    // If the broadcast helper is not available, the messages are still marked read
+  // Broadcast read receipt to other members only when read receipts are enabled
+  if (groupCfg?.readReceiptsEnabled) {
+    try {
+      const { sendReadReceipt } = await import("../lib/ws-broadcast");
+      await sendReadReceipt(groupId, memberId, unreadMessages.map((m) => m.id));
+    } catch {
+      // If the broadcast helper is not available, the messages are still marked read
+    }
   }
 
   res.json({ read: true, count: unreadMessages.length });

@@ -282,6 +282,14 @@ export function createDirectGroup(token: string, memberId: string) {
   });
 }
 
+export function sendTextMessage(groupId: string, token: string, content: string) {
+  return apiRequest<{ message: ChatMessage }>(`/groups/${groupId}/messages`, {
+    method: 'POST',
+    token,
+    body: { content, content_type: 'text' },
+  });
+}
+
 export function sendMediaMessage(
   groupId: string,
   token: string,

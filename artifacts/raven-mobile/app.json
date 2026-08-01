@@ -15,11 +15,22 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.raven.app"
+      "bundleIdentifier": "com.raven.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Raven needs microphone access for voice calls and voice notes.",
+        "NSCameraUsageDescription": "Raven needs camera access for photos and future video calls."
+      }
     },
     "android": {
       "package": "com.raven.app",
-      "backgroundColor": "#0B141A"
+      "backgroundColor": "#0B141A",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.BLUETOOTH"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"

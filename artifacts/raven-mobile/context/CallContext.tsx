@@ -158,6 +158,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        Alert.alert('Call setup', 'Real-time connection is not ready. Please wait a moment and try again.');
+        return;
+      }
+
       try {
         const stream = await mediaDevices.getUserMedia({ audio: true, video: false });
         localStreamRef.current = stream;
@@ -177,8 +182,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         setRemote(initialRemote || (await resolveRemote(groupId)));
         setState('outgoing');
         router.push({ pathname: '/call/[id]', params: { id: groupId } });
-      } catch (err) {
+      } catch (err: any) {
         console.error('[call] start failed', err);
+        Alert.alert('Call failed', err?.message ?? 'Could not start the call');
         reset();
       }
     },

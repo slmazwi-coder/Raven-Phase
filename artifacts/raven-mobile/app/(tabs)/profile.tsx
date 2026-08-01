@@ -227,13 +227,13 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>General</Text>
             <View style={styles.card}>
-              <PressableRow icon="bell" label="Notifications" />
+              <PressableRow icon="bell" label="Notifications" onPress={() => Alert.alert('Coming soon', 'Notification settings will be available in the next update.')} />
               <Divider />
-              <PressableRow icon="shield" label="Security" />
+              <PressableRow icon="shield" label="Security" onPress={() => Alert.alert('Raven Security', 'Screenshot/recording detection and incident reporting are active.')} />
               <Divider />
-              <PressableRow icon="help-circle" label="Help" />
+              <PressableRow icon="help-circle" label="Help" onPress={() => Alert.alert('Help', 'Contact support for help with Raven.')} />
               <Divider />
-              <PressableRow icon="info" label="About Raven" />
+              <PressableRow icon="info" label="About Raven" onPress={() => Alert.alert('About Raven', 'End-to-end secure messaging and calls.')} />
             </View>
           </View>
 
@@ -275,9 +275,17 @@ function ToggleRow({
   );
 }
 
-function PressableRow({ icon, label }: { icon: React.ComponentProps<typeof Feather>['name']; label: string }) {
+function PressableRow({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  label: string;
+  onPress?: () => void;
+}) {
   return (
-    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
       <Feather name={icon} size={20} color={C.textSecondary} />
       <Text style={styles.rowLabel}>{label}</Text>
       <Feather name="chevron-right" size={18} color={C.textTertiary} />

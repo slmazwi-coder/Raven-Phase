@@ -168,8 +168,8 @@ export function createWsServer(server: Server): WebSocketServer {
           })
           .returning();
 
-        await broadcastToGroup(groupId, {
-          type: "message",
+        const payload = {
+          type: "message" as const,
           id: saved.id,
           groupId: saved.groupId,
           senderId: saved.senderId,
@@ -178,7 +178,11 @@ export function createWsServer(server: Server): WebSocketServer {
           content: saved.content,
           contentType: saved.contentType,
           createdAt: saved.createdAt,
-        });
+        };
+
+        await broadcastToGroup(groupId, payload);
+        // Also echo the persisted message back to the sender so the UI appears instantly
+        sendToMember(memberId, payload);
 
         // Push notifications to other members who are not actively connected
         try {
