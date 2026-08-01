@@ -732,6 +732,12 @@ export default function ChatScreen() {
           <View style={styles.center}>
             <ActivityIndicator color={C.primary} size="large" />
           </View>
+        ) : wsMessages.length === 0 ? (
+          <View style={styles.emptyChat}>
+            <Feather name="message-circle" size={44} color={C.textTertiary} />
+            <Text style={styles.emptyChatText}>No messages yet</Text>
+            <Text style={styles.emptyChatSub}>Be the first to say hi.</Text>
+          </View>
         ) : (
           <FlatList
             data={wsMessages}
@@ -752,17 +758,9 @@ export default function ChatScreen() {
                 />
               );
             }}
-            scrollEnabled={!!wsMessages.length}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             contentContainerStyle={styles.listContent}
-            ListEmptyComponent={() => (
-              <View style={styles.emptyChat}>
-                <Feather name="message-circle" size={44} color={C.textTertiary} />
-                <Text style={styles.emptyChatText}>No messages yet</Text>
-                <Text style={styles.emptyChatSub}>Be the first to say hi.</Text>
-              </View>
-            )}
           />
         )}
 
