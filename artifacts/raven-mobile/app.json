@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "RΛvΣи",
+    "name": "Raven",
     "slug": "raven-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -25,23 +25,21 @@
       "package": "com.raven.app",
       "backgroundColor": "#0B141A",
       "permissions": [
+        "android.permission.INTERNET",
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.BLUETOOTH"
+        "android.permission.BLUETOOTH",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
       ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://replit.com/"
-        }
-      ],
+      "expo-router",
       "expo-font",
       "expo-web-browser",
       "./plugins/withRavenSecurity.js",
@@ -52,9 +50,6 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {
-        "origin": "https://replit.com/"
-      },
       "eas": {
         "projectId": "1f8c8173-444b-4199-953b-73fee373c161"
       }

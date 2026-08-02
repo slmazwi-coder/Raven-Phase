@@ -4,7 +4,7 @@ import colors from '@/constants/colors';
 
 const C = colors.light;
 
-const CRYPTIC = 'RΛvΣи';
+const CRYPTIC = 'Raven';
 
 export function RavenLogo({ style, ...props }: TextProps) {
   return (
