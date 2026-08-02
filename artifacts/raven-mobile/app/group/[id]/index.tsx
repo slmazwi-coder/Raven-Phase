@@ -125,7 +125,7 @@ function VoiceNotePlayer({ uri, isMine }: { uri: string; isMine: boolean }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const fileUriRef = useRef<string | null>(null);
 
-  function resolveFileUri(): string | null {
+  async function resolveFileUri(): Promise<string | null> {
     if (!uri.startsWith('data:')) return uri;
     if (fileUriRef.current) return fileUriRef.current;
 
@@ -137,7 +137,8 @@ function VoiceNotePlayer({ uri, isMine }: { uri: string; isMine: boolean }) {
 
     try {
       const file = new FSFile(FSPaths.cache, `raven-voice-${Date.now()}.${ext}`);
-      file.write(base64, { encoding: 'base64' });
+      file.create();
+      await file.write(base64, { encoding: 'base64' });
       fileUriRef.current = file.uri;
       return file.uri;
     } catch (e) {
@@ -151,7 +152,7 @@ function VoiceNotePlayer({ uri, isMine }: { uri: string; isMine: boolean }) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (!soundRef.current) {
-        const fileUri = resolveFileUri();
+        const fileUri = await resolveFileUri();
         if (!fileUri) {
           Alert.alert('Voice note', 'Could not prepare voice note for playback');
           return;

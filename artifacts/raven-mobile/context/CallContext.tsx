@@ -15,7 +15,7 @@ import {
 } from 'react-native-webrtc';
 import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { useAuth } from './AuthContext';
 import { fetchGroup, fetchGroupMembers, type GroupMember } from '@/lib/api';
 
@@ -248,9 +248,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setIsMuted(next);
   }, [isMuted]);
 
-  const toggleSpeaker = useCallback(() => {
-    setIsSpeaker((s) => !s);
-  }, []);
+  const toggleSpeaker = useCallback(async () => {
+    const next = !isSpeaker;
+    setIsSpeaker(next);
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: !next,
+        staysActiveInBackground: true,
+      });
+    } catch (err) {
+      console.warn('[call] toggle speaker failed', err);
+    }
+  }, [isSpeaker]);
 
   useEffect(() => {
     if (!token) return;

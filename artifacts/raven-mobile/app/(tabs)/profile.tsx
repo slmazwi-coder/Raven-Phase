@@ -262,7 +262,7 @@ function ToggleRow({
   onValueChange: (v: boolean) => void;
 }) {
   return (
-    <View style={styles.row}>
+    <Pressable onPress={() => onValueChange(!value)} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
       <Feather name={icon} size={20} color={C.textSecondary} />
       <Text style={styles.rowLabel}>{label}</Text>
       <Switch
@@ -271,7 +271,7 @@ function ToggleRow({
         trackColor={{ false: C.surface, true: C.primary }}
         thumbColor="#fff"
       />
-    </View>
+    </Pressable>
   );
 }
 
