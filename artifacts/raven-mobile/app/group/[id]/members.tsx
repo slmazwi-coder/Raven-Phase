@@ -1,7 +1,9 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -10,10 +12,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import colors from '@/constants/colors';
-import { fetchGroupMembers, type GroupMember } from '@/lib/api';
+import { fetchGroupMembers, removeGroupMember, type GroupMember } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const C = colors.light;
@@ -24,7 +26,17 @@ const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
   member: { bg: C.surface, text: C.textSecondary },
 };
 
-function MemberRow({ member: m }: { member: GroupMember }) {
+function MemberRow({
+  member: m,
+  isAdmin,
+  onPress,
+  onRemove,
+}: {
+  member: GroupMember;
+  isAdmin: boolean;
+  onPress: () => void;
+  onRemove?: () => void;
+}) {
   const badge = ROLE_BADGE[m.roleInGroup] ?? ROLE_BADGE.member;
   const initials = m.fullName
     .split(' ')
@@ -34,9 +46,13 @@ function MemberRow({ member: m }: { member: GroupMember }) {
     .toUpperCase();
 
   return (
-    <View style={styles.row}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
       <View style={styles.rowAvatar}>
-        <Text style={styles.rowInitials}>{initials || '?'}</Text>
+        {m.avatar ? (
+          <Image source={{ uri: m.avatar }} style={styles.rowAvatarImg} />
+        ) : (
+          <Text style={styles.rowInitials}>{initials || '?'}</Text>
+        )}
       </View>
       <View style={styles.rowBody}>
         <Text style={styles.rowName} numberOfLines={1}>
@@ -46,12 +62,18 @@ function MemberRow({ member: m }: { member: GroupMember }) {
           <Text style={styles.rowPhone}>{m.cellNumber}</Text>
         ) : null}
       </View>
-      <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-        <Text style={[styles.badgeText, { color: badge.text }]}>
-          {m.roleInGroup}
-        </Text>
-      </View>
-    </View>
+      {isAdmin && onRemove ? (
+        <Pressable onPress={onRemove} style={styles.removeBtn} hitSlop={8}>
+          <Feather name="user-minus" size={18} color={C.accent} />
+        </Pressable>
+      ) : (
+        <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+          <Text style={[styles.badgeText, { color: badge.text }]}>
+            {m.roleInGroup}
+          </Text>
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -59,13 +81,37 @@ export default function MembersScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id: groupId } = useLocalSearchParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, member } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['group-members', groupId, token],
     queryFn: () => fetchGroupMembers(groupId!, token!),
     enabled: !!groupId && !!token,
   });
+
+  const removeMutation = useMutation({
+    mutationFn: (memberId: string) => removeGroupMember(groupId!, token!, memberId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['group-members', groupId] }),
+    onError: (e: any) => Alert.alert('Could not remove member', e?.message ?? 'Please try again'),
+  });
+
+  const isAdmin = (data?.members ?? []).find((m) => m.id === member?.id)?.roleInGroup === 'admin';
+
+  const handleRemove = (target: GroupMember) => {
+    Alert.alert(
+      'Remove member',
+      `Remove ${target.fullName} from this group?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => removeMutation.mutate(target.id),
+        },
+      ],
+    );
+  };
 
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
 
@@ -96,7 +142,18 @@ export default function MembersScreen() {
         <FlatList
           data={data?.members ?? []}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <MemberRow member={item} />}
+          renderItem={({ item }) => (
+            <MemberRow
+              member={item}
+              isAdmin={isAdmin}
+              onPress={() => router.push(`/user/${item.id}`)}
+              onRemove={
+                isAdmin && item.id !== member?.id
+                  ? () => handleRemove(item)
+                  : undefined
+              }
+            />
+          )}
           scrollEnabled={!!(data?.members?.length)}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -176,6 +233,7 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 12,
   },
+  rowPressed: { opacity: 0.7 },
   rowAvatar: {
     width: 44,
     height: 44,
@@ -183,6 +241,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  rowAvatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   rowInitials: {
     fontSize: 16,
@@ -210,5 +274,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     textTransform: 'capitalize',
   },
+  removeBtn: { padding: 8, marginLeft: 8 },
   separator: { height: 8 },
 });

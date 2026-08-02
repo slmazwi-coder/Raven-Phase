@@ -34,7 +34,6 @@ async function buildVercel() {
       "re2",
       "farmhash",
       "xxhash-addon",
-      "ws",
       "bufferutil",
       "utf-8-validate",
       "ssh2",

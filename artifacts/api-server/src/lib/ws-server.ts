@@ -1,26 +1,28 @@
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 import type { Server } from "http";
 import { verifyToken } from "./auth";
 import { db } from "@workspace/db";
 import {
   groupMembersTable,
+  groupsTable,
   membersTable,
   messagesTable,
 } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { logger } from "./logger";
-
-interface AuthedSocket extends WebSocket {
-  memberId?: string;
-}
-
-/** memberId → all connected sockets for that member */
-const clientsByMember = new Map<string, Set<AuthedSocket>>();
+import {
+  broadcastToGroup,
+  clientsByMember,
+  getGroupMemberIds,
+  getMemberGroups,
+  sendToMember,
+  type ClientSocket,
+} from "./ws-broadcast";
 
 export function createWsServer(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
-  wss.on("connection", (ws: AuthedSocket, req) => {
+  wss.on("connection", async (ws: ClientSocket, req) => {
     // Authenticate via ?token= query param (WS handshake headers can't carry Authorization)
     const url = new URL(req.url ?? "/", "http://localhost");
     const token = url.searchParams.get("token");
@@ -39,6 +41,7 @@ export function createWsServer(server: Server): WebSocketServer {
     }
 
     ws.memberId = auth.sub;
+    ws.typingTimeouts = new Map();
 
     // Register socket
     if (!clientsByMember.has(auth.sub)) {
@@ -47,21 +50,34 @@ export function createWsServer(server: Server): WebSocketServer {
     clientsByMember.get(auth.sub)!.add(ws);
     logger.info({ memberId: auth.sub }, "WS client connected");
 
+    // Update last seen and announce online presence to all shared groups
+    try {
+      await db
+        .update(membersTable)
+        .set({ isOnline: true, lastSeenAt: new Date() })
+        .where(eq(membersTable.id, auth.sub));
+
+      const groupIds = await getMemberGroups(auth.sub);
+      for (const groupId of groupIds) {
+        await broadcastToGroup(
+          groupId,
+          { type: "presence", memberId: auth.sub, online: true },
+          auth.sub,
+        );
+      }
+    } catch (err) {
+      logger.error({ err, memberId: auth.sub }, "Presence broadcast error");
+    }
+
     ws.on("message", async (data) => {
       try {
         const raw = typeof data === "string" ? data : data.toString();
-        const msg = JSON.parse(raw) as {
-          type: string;
-          groupId?: string;
-          content?: string;
-        };
-
-        if (msg.type !== "send_message" || !msg.groupId || !msg.content?.trim()) {
-          return;
-        }
+        const msg = JSON.parse(raw) as Record<string, any>;
 
         const memberId = ws.memberId!;
-        const { groupId, content } = msg;
+        const { groupId } = msg;
+
+        if (!groupId) return;
 
         // Verify sender is a member of the target group
         const [membership] = await db
@@ -81,62 +97,144 @@ export function createWsServer(server: Server): WebSocketServer {
           return;
         }
 
-        // Resolve sender display name
+        const CALL_TYPES = [
+          "call_offer",
+          "call_answer",
+          "call_ice_candidate",
+          "call_end",
+          "call_reject",
+          "call_busy",
+        ];
+        if (CALL_TYPES.includes(msg.type)) {
+          const others = await db
+            .select({ memberId: groupMembersTable.memberId })
+            .from(groupMembersTable)
+            .where(
+              and(
+                eq(groupMembersTable.groupId, groupId),
+                ne(groupMembersTable.memberId, memberId),
+              ),
+            );
+          if (others.length === 0) {
+            ws.send(JSON.stringify({ type: "call_unavailable", groupId }));
+            return;
+          }
+          const payload = { ...msg, from: memberId };
+          for (const o of others) {
+            sendToMember(o.memberId, payload);
+          }
+          return;
+        }
+
+        if (msg.type === "typing") {
+          await broadcastToGroup(
+            groupId,
+            {
+              type: "typing",
+              groupId,
+              memberId,
+              isTyping: msg.isTyping ?? true,
+            },
+            memberId,
+          );
+          return;
+        }
+
+        if (msg.type !== "send_message") {
+          return;
+        }
+
+        const trimmedContent = msg.content?.trim() ?? "";
+        // Allow empty content for media messages, but require a media url; otherwise need text
+        if (!trimmedContent) {
+          return;
+        }
+
+        // Resolve sender display name and avatar
         const [sender] = await db
-          .select({ fullName: membersTable.fullName })
+          .select({ fullName: membersTable.fullName, avatar: membersTable.avatar })
           .from(membersTable)
           .where(eq(membersTable.id, memberId));
 
-        // Persist message and mark as delivered immediately (Phase 2)
+        // Persist message and mark as delivered immediately
         const [saved] = await db
           .insert(messagesTable)
           .values({
             groupId,
             senderId: memberId,
-            content: content.trim(),
+            content: trimmedContent,
             contentType: "text",
             deliveredAt: new Date(),
           })
           .returning();
 
-        // Fetch all group members to broadcast to
-        const groupMembers = await db
-          .select({ memberId: groupMembersTable.memberId })
-          .from(groupMembersTable)
-          .where(eq(groupMembersTable.groupId, groupId));
-
-        const outbound = JSON.stringify({
-          type: "message",
+        const payload = {
+          type: "message" as const,
           id: saved.id,
           groupId: saved.groupId,
           senderId: saved.senderId,
           senderName: sender?.fullName ?? memberId,
+          senderAvatar: sender?.avatar ?? null,
           content: saved.content,
           contentType: saved.contentType,
           createdAt: saved.createdAt,
-        });
+        };
 
-        for (const { memberId: gm } of groupMembers) {
-          const sockets = clientsByMember.get(gm);
-          if (!sockets) continue;
-          for (const sock of sockets) {
-            if (sock.readyState === WebSocket.OPEN) {
-              sock.send(outbound);
-            }
-          }
+        await broadcastToGroup(groupId, payload);
+        // Also echo the persisted message back to the sender so the UI appears instantly
+        sendToMember(memberId, payload);
+
+        // Push notifications to other members who are not actively connected
+        try {
+          const memberIds = await getGroupMemberIds(groupId);
+          const recipients = memberIds.filter((id) => id !== memberId);
+          const [group] = await db
+            .select({ isDirect: groupsTable.isDirect })
+            .from(groupsTable)
+            .where(eq(groupsTable.id, groupId));
+          const { sendNewMessagePush } = await import("../lib/push");
+          await sendNewMessagePush(
+            groupId,
+            memberId,
+            recipients,
+            saved.content,
+            group?.isDirect,
+          );
+        } catch (err) {
+          logger.warn({ err }, "Failed to send push notifications");
         }
       } catch (err) {
         logger.error({ err }, "WS message handler error");
       }
     });
 
-    ws.on("close", () => {
+    ws.on("close", async () => {
       const { memberId } = ws;
       if (!memberId) return;
+
       const set = clientsByMember.get(memberId);
       if (set) {
         set.delete(ws);
-        if (set.size === 0) clientsByMember.delete(memberId);
+        if (set.size === 0) {
+          clientsByMember.delete(memberId);
+          // Mark offline and announce to shared groups
+          try {
+            await db
+              .update(membersTable)
+              .set({ isOnline: false, lastSeenAt: new Date() })
+              .where(eq(membersTable.id, memberId));
+            const groupIds = await getMemberGroups(memberId);
+            for (const groupId of groupIds) {
+              await broadcastToGroup(
+                groupId,
+                { type: "presence", memberId, online: false },
+                memberId,
+              );
+            }
+          } catch (err) {
+            logger.error({ err, memberId }, "Offline broadcast error");
+          }
+        }
       }
       logger.info({ memberId }, "WS client disconnected");
     });

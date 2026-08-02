@@ -43,22 +43,27 @@
     "expo-web-browser": "~15.0.10",
     "react-dom": "catalog:",
     "react-native-gesture-handler": "~2.28.0",
-    "react-native-keyboard-controller": "1.18.5",
-    "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
-    "react-native-worklets": "0.5.1",
     "typescript": "~5.9.2",
     "zod": "catalog:",
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "13.0.0",
+    "@workspace/raven-security": "workspace:*",
     "expo": "~54.0.27",
+    "expo-application": "~7.0.8",
+    "expo-av": "~16.0.8",
+    "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~19.0.23",
+    "expo-image-manipulator": "~14.0.8",
+    "expo-notifications": "~0.32.17",
     "expo-secure-store": "~15.0.8",
     "react": "catalog:",
     "react-native": "0.81.5",
-    "@workspace/raven-security": "workspace:*"
+    "react-native-webrtc": "124.0.6"
   }
 }

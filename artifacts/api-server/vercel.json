@@ -1,10 +1,8 @@
 {
   "version": 2,
-  "installCommand": "pnpm run build:vercel",
-  "builds": [
-    { "src": "api/index.mjs", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "source": "/(.*)", "destination": "api/index.mjs" }
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm run build:vercel",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.mjs" }
   ]
 }

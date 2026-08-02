@@ -4,60 +4,60 @@
  * Use via the useColors() hook: const colors = useColors()
  */
 
-const ravenTheme = {
-  // Surfaces
-  background: '#1A1A3C',
-  surface: '#252550',
-  surfaceElevated: '#2F2F60',
-  tabBar: '#12122A',
+const whatsappTheme = {
+  // Surfaces (WhatsApp dark mode)
+  background: '#0B141A',
+  surface: '#1F2C34',
+  surfaceElevated: '#2A3942',
+  tabBar: '#0B141A',
 
-  // Brand accents
-  primary: '#F87920',        // orange — primary action / CTA
-  primaryForeground: '#FFFFFF',
-  primaryPressed: '#D96A1A',
-  accent: '#EC5837',         // deep red-orange — alerts / warnings / destructive
+  // Brand accents (WhatsApp green)
+  primary: '#25D366',
+  primaryForeground: '#111B21',
+  primaryPressed: '#1DA851',
+  accent: '#EF553C', // destructive / alerts
 
   // Text
-  text: '#F2F2F2',           // soft off-white on dark
-  textSecondary: 'rgba(242, 242, 242, 0.6)',
-  textTertiary: 'rgba(242, 242, 242, 0.35)',
+  text: '#E9EDEF',
+  textSecondary: 'rgba(233, 237, 239, 0.65)',
+  textTertiary: 'rgba(233, 237, 239, 0.4)',
 
   // Borders & dividers
-  border: 'rgba(242, 242, 242, 0.1)',
-  borderStrong: 'rgba(242, 242, 242, 0.2)',
+  border: 'rgba(134, 150, 160, 0.15)',
+  borderStrong: 'rgba(134, 150, 160, 0.25)',
 
   // Inputs
-  input: 'rgba(242, 242, 242, 0.08)',
-  inputFocused: 'rgba(248, 121, 32, 0.25)',
+  input: '#2A3942',
+  inputFocused: '#33535E',
 
   // Chat bubbles
-  bubbleSent: '#F87920',
-  bubbleSentText: '#FFFFFF',
-  bubbleReceived: '#2F2F60',
-  bubbleReceivedText: '#F2F2F2',
+  bubbleSent: '#005C4B',
+  bubbleSentText: '#E9EDEF',
+  bubbleReceived: '#1F2C34',
+  bubbleReceivedText: '#E9EDEF',
 
   // Status
-  success: '#4CAF50',
-  destructive: '#EC5837',
+  success: '#25D366',
+  destructive: '#EF553C',
   destructiveForeground: '#FFFFFF',
 
   // Compatibility aliases for useColors() hook
-  tint: '#F87920',
-  foreground: '#F2F2F2',
-  card: '#252550',
-  cardForeground: '#F2F2F2',
-  muted: '#252550',
-  mutedForeground: 'rgba(242, 242, 242, 0.6)',
-  secondary: '#2F2F60',
-  secondaryForeground: '#F2F2F2',
+  tint: '#25D366',
+  foreground: '#E9EDEF',
+  card: '#1F2C34',
+  cardForeground: '#E9EDEF',
+  muted: '#1F2C34',
+  mutedForeground: 'rgba(233, 237, 239, 0.65)',
+  secondary: '#2A3942',
+  secondaryForeground: '#E9EDEF',
 
   radius: 12,
 };
 
 const colors = {
-  light: ravenTheme,
-  dark: ravenTheme,
-  radius: ravenTheme.radius,
+  light: whatsappTheme,
+  dark: whatsappTheme,
+  radius: whatsappTheme.radius,
 };
 
 export default colors;

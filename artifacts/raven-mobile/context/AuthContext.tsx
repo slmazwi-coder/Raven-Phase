@@ -14,6 +14,8 @@ const DEVICE_ID_KEY = 'raven_device_id';
 export interface AuthMember {
   id: string;
   role: 'admin' | 'moderator' | 'member';
+  fullName?: string;
+  cellNumber?: string;
 }
 
 interface AuthContextValue {
@@ -26,7 +28,7 @@ interface AuthContextValue {
   getDeviceId: () => Promise<string>;
 }
 
-function decodeJwt(token: string): { sub: string; role: string; exp: number } {
+function decodeJwt(token: string): { sub: string; role: string; fullName?: string; exp: number } {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid JWT');
   const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -67,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Check not expired
           if (decoded.exp * 1000 > Date.now()) {
             setToken(stored);
-            setMember({ id: decoded.sub, role: decoded.role as AuthMember['role'] });
+            setMember({ id: decoded.sub, role: decoded.role as AuthMember['role'], fullName: decoded.fullName });
           } else {
             await secureDelete(TOKEN_KEY);
           }
@@ -85,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const decoded = decodeJwt(newToken);
     await secureSet(TOKEN_KEY, newToken);
     setToken(newToken);
-    setMember({ id: decoded.sub, role: decoded.role as AuthMember['role'] });
+    setMember({ id: decoded.sub, role: decoded.role as AuthMember['role'], fullName: decoded.fullName });
   }, []);
 
   const logout = useCallback(async () => {

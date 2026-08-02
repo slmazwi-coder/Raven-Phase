@@ -26,7 +26,10 @@ export function getAttestationHeader(): string | null {
 
 /** Generates a fresh attestation token and caches it. */
 export async function refreshAttestation(): Promise<string | null> {
-  if (process.env.RAVEN_SKIP_ATTESTATION === 'true') {
+  if (
+    process.env.EXPO_PUBLIC_RAVEN_SKIP_ATTESTATION === 'true' ||
+    process.env.RAVEN_SKIP_ATTESTATION === 'true'
+  ) {
     return null;
   }
   try {

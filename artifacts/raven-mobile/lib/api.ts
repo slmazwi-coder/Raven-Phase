@@ -43,11 +43,17 @@ export async function apiRequest<T>(
     headers['X-Raven-Attestation'] = attestation;
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: controller.signal,
   });
+
+  clearTimeout(timeoutId);
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
@@ -132,21 +138,113 @@ export function registerDevice(
 export interface Group {
   id: string;
   name: string;
+  isDirect?: boolean;
+  readReceiptsEnabled?: boolean;
   createdAt: string;
+  createdBy?: string;
   roleInGroup: string;
   joinedAt: string;
+  memberCount?: number;
+  unreadCount?: number;
+  avatar?: string | null;
+  otherIsOnline?: boolean;
+  lastMessage?: {
+    content: string;
+    createdAt: string;
+    senderName?: string;
+    contentType: string;
+    mediaName?: string | null;
+  } | null;
 }
 
 export function fetchGroups(token: string) {
   return apiRequest<{ groups: Group[] }>('/groups', { token });
 }
 
+export function fetchGroup(groupId: string, token: string) {
+  return apiRequest<{ group: Group }>(`/groups/${groupId}`, { token });
+}
+
+export function createGroup(
+  token: string,
+  body: { name: string; member_ids?: string[] },
+) {
+  return apiRequest<{ group: Group }>('/groups', {
+    method: 'POST',
+    token,
+    body,
+  });
+}
+
+export interface SearchMember {
+  id: string;
+  fullName: string;
+  cellNumber?: string;
+  avatar?: string | null;
+  role?: string;
+  status?: string;
+  lastSeenAt?: string | null;
+  createdAt?: string;
+}
+
+export interface MemberProfile extends SearchMember {
+  isOnline?: boolean;
+}
+
+export function fetchMember(token: string) {
+  return apiRequest<{ member: SearchMember }>('/members/me', { token });
+}
+
+export function fetchMemberById(token: string, memberId: string) {
+  return apiRequest<{ member: MemberProfile }>(`/members/${memberId}`, { token });
+}
+
+export function updateProfile(
+  token: string,
+  body: { full_name?: string; avatar?: string },
+) {
+  return apiRequest<{ member: SearchMember }>('/members/me', {
+    method: 'PATCH',
+    token,
+    body,
+  });
+}
+
+export interface PrivacySettings {
+  lastSeenEnabled: boolean;
+  readReceiptsEnabled: boolean;
+}
+
+export function fetchPrivacy(token: string) {
+  return apiRequest<{ privacy: PrivacySettings }>('/members/me/privacy', { token });
+}
+
+export function updatePrivacy(
+  token: string,
+  body: { last_seen_enabled?: boolean; read_receipts_enabled?: boolean },
+) {
+  return apiRequest<{ privacy: PrivacySettings }>('/members/me/privacy', {
+    method: 'PATCH',
+    token,
+    body,
+  });
+}
+
+export function searchMembers(token: string, query: string) {
+  return apiRequest<{ members: SearchMember[] }>(
+    `/members/search?q=${encodeURIComponent(query)}`,
+    { token },
+  );
+}
+
 export interface GroupMember {
   id: string;
   fullName: string;
   cellNumber?: string;
+  avatar?: string | null;
   role: string;
   status: string;
+  lastSeenAt?: string | null;
   roleInGroup: string;
   joinedAt: string;
 }
@@ -162,8 +260,15 @@ export interface ChatMessage {
   groupId: string;
   senderId: string;
   senderName: string;
+  senderAvatar?: string | null;
   content: string;
-  contentType: string;
+  contentType: 'text' | 'image' | 'audio' | 'document';
+  mediaUrl?: string | null;
+  mediaName?: string | null;
+  mediaMime?: string | null;
+  mediaSize?: number | null;
+  deliveredAt?: string | null;
+  readBy?: string[];
   createdAt: string;
 }
 
@@ -173,6 +278,88 @@ export function fetchMessages(groupId: string, token: string, before?: string) {
     `/groups/${groupId}/messages${query}`,
     { token },
   );
+}
+
+export function createDirectGroup(token: string, memberId: string) {
+  return apiRequest<{ group: Group }>('/groups/direct', {
+    method: 'POST',
+    token,
+    body: { member_id: memberId },
+  });
+}
+
+export function sendTextMessage(groupId: string, token: string, content: string) {
+  return apiRequest<{ message: ChatMessage }>(`/groups/${groupId}/messages`, {
+    method: 'POST',
+    token,
+    body: { content, content_type: 'text' },
+  });
+}
+
+export function sendMediaMessage(
+  groupId: string,
+  token: string,
+  body: {
+    content?: string;
+    content_type: 'text' | 'image' | 'audio' | 'document';
+    media_url?: string;
+    media_name?: string;
+    media_mime?: string;
+    media_size?: number;
+  },
+) {
+  return apiRequest<{ message: ChatMessage }>(`/groups/${groupId}/messages`, {
+    method: 'POST',
+    token,
+    body,
+  });
+}
+
+export function markGroupAsRead(groupId: string, token: string) {
+  return apiRequest<{ read: boolean; count?: number }>(`/groups/${groupId}/read`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function leaveGroup(groupId: string, token: string) {
+  return apiRequest<{ left: boolean; deleted?: boolean }>(`/groups/${groupId}/leave`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function deleteGroup(groupId: string, token: string) {
+  return apiRequest<{ deleted: boolean }>(`/groups/${groupId}/delete`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function removeGroupMember(groupId: string, token: string, memberId: string) {
+  return apiRequest<{ removed: boolean }>(`/groups/${groupId}/remove-member`, {
+    method: 'POST',
+    token,
+    body: { member_id: memberId },
+  });
+}
+
+export function clearGroupChat(groupId: string, token: string) {
+  return apiRequest<{ cleared: boolean }>(`/groups/${groupId}/clear`, {
+    method: 'POST',
+    token,
+  });
+}
+
+export function registerPushToken(
+  token: string,
+  body: { device_identifier: string; platform: 'ios' | 'android'; push_token: string },
+) {
+  return apiRequest<{ device: unknown }>('/devices/push-token', {
+    method: 'POST',
+    token,
+    body,
+  });
 }
 
 // ─── Security / Incidents ───────────────────────────────────────────────────

@@ -9,6 +9,7 @@ if (!SESSION_SECRET) {
 export interface AuthPayload {
   sub: string; // member id
   role: "admin" | "moderator" | "member";
+  fullName?: string;
 }
 
 const TOKEN_TTL = "30d";
@@ -23,7 +24,7 @@ export function verifyToken(token: string): AuthPayload | null {
       iat: number;
       exp: number;
     };
-    return { sub: decoded.sub, role: decoded.role };
+    return { sub: decoded.sub, role: decoded.role, fullName: decoded.fullName };
   } catch (err) {
     logger.debug({ err }, "Token verification failed");
     return null;
