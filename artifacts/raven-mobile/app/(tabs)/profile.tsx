@@ -267,7 +267,7 @@ function ToggleRow({
       <Text style={styles.rowLabel}>{label}</Text>
       <Switch
         value={value}
-        onValueChange={onValueChange}
+        pointerEvents="none"
         trackColor={{ false: C.surface, true: C.primary }}
         thumbColor="#fff"
       />
